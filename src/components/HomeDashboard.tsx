@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Clock, Zap, Share2, ShieldCheck, Home, ShoppingBag, Users, ListTodo, Trophy, 
-  Wallet, UserCircle, Bell, ChevronRight, TrendingUp, Sparkles, Filter, Search, Flame, Loader2 
+import {
+  Clock, Zap, Share2, ShieldCheck, Home, ShoppingBag, Users, ListTodo, Trophy,
+  Wallet, UserCircle, Bell, ChevronRight, TrendingUp, Sparkles, Filter, Search, Flame, Loader2
 } from 'lucide-react';
 import { signOut } from 'firebase/auth';
-import { 
-  query, collection, where, orderBy, limit, onSnapshot, doc, updateDoc, 
-  serverTimestamp, getDocs, addDoc 
+import {
+  query, collection, where, orderBy, limit, onSnapshot, doc, updateDoc,
+  serverTimestamp, getDocs, addDoc
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { UserData, TaskData, CouponData, Announcement, FirebaseUser, handleFirestoreError, OperationType } from '../types';
+import { UserData, TaskData, CouponData, Announcement, handleFirestoreError, OperationType, FirebaseUser } from '../types';
 import { NavButton } from './Navigation';
 import ProfileScreen from './ProfileScreen';
 import WalletScreen from './WalletScreen';
 import TasksScreen from './TasksScreen';
-import { 
-  PromotionCelebration as LevelUpCelebration, 
+import {
+  PromotionCelebration as LevelUpCelebration,
   MysteryTaskPopup,
   LeaderboardTab,
   TeamChat
@@ -34,7 +34,7 @@ export function TaskCard({ task, now, onAccept, onSkip }: { task: TaskData, now:
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       className="bg-[#1A1A1A] p-4 rounded-2xl border border-gray-800 flex flex-col gap-4"
@@ -50,13 +50,13 @@ export function TaskCard({ task, now, onAccept, onSkip }: { task: TaskData, now:
         <span className="text-[#00C9A7] font-black">₹{task.earning}</span>
       </div>
       <div className="flex gap-3">
-        <button 
+        <button
           onClick={() => onAccept(task.id!)}
           className="flex-1 bg-[#00C9A7] text-black font-bold py-2.5 rounded-xl text-sm active:scale-95 transition-transform"
         >
           Accept
         </button>
-        <button 
+        <button
           onClick={() => onSkip(task.id!)}
           className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm active:scale-95 transition-transform"
         >
@@ -80,7 +80,7 @@ export function CouponCard({ coupon, userData, now }: { coupon: CouponData | nul
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       className="bg-gradient-to-br from-[#1A1A1A] to-[#111111] p-6 rounded-3xl border border-gray-800 relative overflow-hidden"
@@ -96,9 +96,9 @@ export function CouponCard({ coupon, userData, now }: { coupon: CouponData | nul
           </span>
         </div>
         <h2 className="text-3xl font-black text-white mb-4 tracking-wider">{coupon?.code || 'PLEX-XXXX'}</h2>
-        
+
         <div className="w-full h-1.5 bg-gray-800 rounded-full mb-6 overflow-hidden">
-          <motion.div 
+          <motion.div
             className="h-full bg-[#E8B84B]"
             initial={{ width: '100%' }}
             animate={{ width: `${getCouponProgress()}%` }}
@@ -106,7 +106,7 @@ export function CouponCard({ coupon, userData, now }: { coupon: CouponData | nul
           />
         </div>
 
-        <button 
+        <button
           onClick={() => {
             const message = `Check out ${userData?.venture}! Use my code ${coupon?.code} for discount: https://workplex.hvrs.com/shop`;
             window.open(`https://wa.me/?text=${encodeURIComponent(message)}`);
@@ -166,10 +166,10 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
   useEffect(() => {
     const fetchAIPrediction = async () => {
       const pendingCount = tasks.filter(t => t.status === 'assigned').length;
-      const avgEarning = tasks.reduce((a,b) => a + b.earning, 0) / (tasks.length || 1);
-      setAiPrediction({ 
-        predictedEarning: pendingCount * avgEarning, 
-        message: `Complete ${pendingCount} more tasks to earn Rs.${Math.round(pendingCount * avgEarning)} extra today!` 
+      const avgEarning = tasks.reduce((a, b) => a + b.earning, 0) / (tasks.length || 1);
+      setAiPrediction({
+        predictedEarning: pendingCount * avgEarning,
+        message: `Complete ${pendingCount} more tasks to earn Rs.${Math.round(pendingCount * avgEarning)} extra today!`
       });
     };
     if (user.uid) fetchAIPrediction();
@@ -319,7 +319,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
       <div className="flex-1 min-h-screen pb-32 md:pb-6 md:ml-64 relative w-full md:w-[calc(100%-16rem)]">
         <AnimatePresence>
           {toast && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: 50, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.9 }}
@@ -339,14 +339,14 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
         {activeTab === 'home' ? (
           <>
             {userData?.showPromotionCelebration && (
-              <LevelUpCelebration 
-                level={userData.level || 'Bronze'} 
+              <LevelUpCelebration
+                level={userData.level || 'Bronze'}
                 uid={user.uid}
-                onClose={() => updateDoc(doc(db, 'users', user.uid), { showPromotionCelebration: false })} 
+                onClose={() => updateDoc(doc(db, 'users', user.uid), { showPromotionCelebration: false })}
               />
             )}
             {/* Top Bar */}
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               className="p-6 bg-[#111111] border-b border-gray-800"
@@ -380,7 +380,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
                   <h1 className="text-4xl font-black text-white">₹{(userData?.wallets?.earned || 0).toLocaleString()}</h1>
                   <p className="text-[#00C9A7] text-sm font-medium mt-1">Today: +₹{userData?.todayEarnings || 0}</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setActiveTab('wallet')}
                   className="bg-[#E8B84B] text-black p-3 rounded-2xl shadow-[0_0_20px_rgba(232,184,75,0.2)] active:scale-95 transition-transform"
                 >
@@ -397,12 +397,12 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Live Earnings Feed</span>
                 </div>
                 <div className="h-8 overflow-hidden relative">
-                  <motion.div 
+                  <motion.div
                     animate={{ y: [0, -32 * (globalTransactions.length || 1)] }}
-                    transition={{ 
-                      duration: (globalTransactions.length || 1) * 3, 
-                      repeat: Infinity, 
-                      ease: "linear" 
+                    transition={{
+                      duration: (globalTransactions.length || 1) * 3,
+                      repeat: Infinity,
+                      ease: "linear"
                     }}
                     className="space-y-0"
                   >
@@ -425,7 +425,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
               )}
 
               {/* AI Earnings Predictor */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-[#E8B84B] p-6 rounded-3xl text-black flex items-center justify-between shadow-[0_10px_30px_rgba(232,184,75,0.2)]"
@@ -451,12 +451,12 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
                 </div>
                 <div className="space-y-4">
                   {tasks.length > 0 ? tasks.map((task) => (
-                    <MemoizedTaskCard 
-                      key={task.id} 
-                      task={task} 
-                      now={now} 
-                      onAccept={handleAcceptTask} 
-                      onSkip={handleSkipTask} 
+                    <MemoizedTaskCard
+                      key={task.id}
+                      task={task}
+                      now={now}
+                      onAccept={handleAcceptTask}
+                      onSkip={handleSkipTask}
                     />
                   )) : (
                     <div className="bg-[#1A1A1A] p-8 rounded-3xl border border-dashed border-gray-800 flex flex-col items-center text-center">
@@ -476,7 +476,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
                   <span className="text-[#E8B84B] font-black">₹{(userData?.monthlyEarnings || 0).toLocaleString()}/50k</span>
                 </div>
                 <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden mb-3">
-                  <motion.div 
+                  <motion.div
                     className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7]"
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min(100, ((userData?.monthlyEarnings || 0) / 50000) * 100)}%` }}
@@ -515,7 +515,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
                 <Sparkles className="text-[#E8B84B]" size={20} />
                 <h3 className="text-lg font-bold">AI Recommended for You</h3>
               </div>
-              
+
               {isAiLoading ? (
                 <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
                   {[1, 2, 3].map(i => (
@@ -525,7 +525,7 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
               ) : Array.isArray(aiRecommendations) ? (
                 <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
                   {aiRecommendations.map((cat: string, idx: number) => (
-                    <motion.div 
+                    <motion.div
                       key={idx}
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
@@ -562,10 +562,10 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
             </div>
           </div>
         ) : activeTab === 'profile' && userData ? (
-          <ProfileScreen 
-            userData={userData} 
-            teamSize={teamSize} 
-            onLogout={() => signOut(auth)} 
+          <ProfileScreen
+            userData={userData}
+            teamSize={teamSize}
+            onLogout={() => signOut(auth)}
           />
         ) : (
           <div className="flex flex-col items-center justify-center h-[80vh] text-gray-500">
@@ -597,10 +597,10 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
         {/* Mystery Task Popup */}
         <AnimatePresence>
           {mysteryTask && (
-            <MysteryTaskPopup 
-              task={mysteryTask} 
-              onAccept={handleAcceptMysteryTask} 
-              onClose={() => setMysteryTask(null)} 
+            <MysteryTaskPopup
+              task={mysteryTask}
+              onAccept={handleAcceptMysteryTask}
+              onClose={() => setMysteryTask(null)}
             />
           )}
         </AnimatePresence>
@@ -608,8 +608,8 @@ export default function HomeDashboard({ user }: { user: FirebaseUser }) {
         {/* Level Up Celebration */}
         <AnimatePresence>
           {showCelebration && (
-            <LevelUpCelebration 
-              level={userData?.level || 'Bronze'} 
+            <LevelUpCelebration
+              level={userData?.level || 'Bronze'}
               uid={user.uid}
               onClose={handleDismissCelebration}
             />

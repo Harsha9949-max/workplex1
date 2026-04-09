@@ -14,6 +14,11 @@ interface OnboardingFlowProps {
   user: any;
   onComplete: (data: Partial<UserProfile>) => void;
   onCancel: () => void;
+  userInfo?: {
+    email: string;
+    phone: string;
+    photoURL: string;
+  };
 }
 
 export default function OnboardingFlow({ user, onComplete, onCancel }: OnboardingFlowProps) {

@@ -40,8 +40,9 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage } from '../firebase';
-import { UserData, OperationType, handleFirestoreError } from '../types';
+import { UserData, OperationType, handleFirestoreError, TaskData } from '../types';
 import { User as FirebaseUser } from 'firebase/auth';
+import type { FirebaseUser as FirebaseUserType } from '../types';
 
 type TabType = 'all' | 'pending' | 'submitted' | 'approved' | 'rejected';
 
@@ -438,8 +439,8 @@ export default function TasksScreen({ user, userData }: TasksScreenProps) {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
                 className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${activeTab === tab.key
-                    ? 'bg-[#E8B84B] text-black border-[#E8B84B]'
-                    : 'bg-transparent border-gray-800 text-gray-500 hover:border-gray-600'
+                  ? 'bg-[#E8B84B] text-black border-[#E8B84B]'
+                  : 'bg-transparent border-gray-800 text-gray-500 hover:border-gray-600'
                   }`}
               >
                 {tab.icon}

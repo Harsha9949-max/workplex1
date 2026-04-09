@@ -4,34 +4,34 @@
  */
 
 import React, { useState, useEffect, useRef, ErrorInfo, ReactNode } from 'react';
-import { 
-  BrowserRouter as Router, 
-  Routes, 
-  Route, 
-  useParams, 
-  useNavigate, 
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  useParams,
+  useNavigate,
   Link,
   useLocation
 } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut, 
-  RecaptchaVerifier, 
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  RecaptchaVerifier,
   signInWithPhoneNumber,
   ConfirmationResult,
   User as FirebaseUser
 } from 'firebase/auth';
-import { 
-  doc, 
-  getDoc, 
-  setDoc, 
+import {
+  doc,
+  getDoc,
+  setDoc,
   updateDoc,
-  serverTimestamp, 
-  collection, 
-  query, 
-  where, 
+  serverTimestamp,
+  collection,
+  query,
+  where,
   getDocs,
   onSnapshot,
   orderBy,
@@ -41,16 +41,16 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { auth, db, storage, googleProvider } from './firebase';
-import { 
-  createTask, 
-  approveSubmission, 
-  rejectSubmission, 
-  approveWithdrawal, 
-  rejectWithdrawal, 
-  createSubAdmin, 
-  sendAnnouncement, 
-  manualCredit, 
-  updateUserStatus, 
+import {
+  createTask,
+  approveSubmission,
+  rejectSubmission,
+  approveWithdrawal,
+  rejectWithdrawal,
+  createSubAdmin,
+  sendAnnouncement,
+  manualCredit,
+  updateUserStatus,
   updateUserRole,
   activateCoupon
 } from './functions';
@@ -61,28 +61,28 @@ import WalletScreen from './components/WalletScreen';
 import TasksScreen from './components/TasksScreen';
 import ProfileScreen from './components/ProfileScreen';
 import { DesktopSidebar, MobileBottomNav, NavButton } from './components/Navigation';
-import { 
-  StreakDisplay, 
-  BadgeGrid, 
-  LevelProgress, 
-  LeaderboardTab, 
-  LevelUpCelebration, 
+import {
+  StreakDisplay,
+  BadgeGrid,
+  LevelProgress,
+  LeaderboardTab,
+  LevelUpCelebration,
   MysteryTaskPopup,
   BADGES,
   LEVELS
 } from './components/Gamification';
 import { motion, AnimatePresence } from 'framer-motion';
 import CryptoJS from 'crypto-js';
-import { 
-  Phone, 
-  User, 
-  Briefcase, 
-  CreditCard, 
-  FileText, 
-  CheckCircle, 
-  LogOut, 
-  ShieldCheck, 
-  Camera, 
+import {
+  Phone,
+  User,
+  Briefcase,
+  CreditCard,
+  FileText,
+  CheckCircle,
+  LogOut,
+  ShieldCheck,
+  Camera,
   Loader2,
   AlertCircle,
   Flame,
@@ -124,18 +124,18 @@ import {
   ChevronUp,
   Trophy
 } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  LineChart, 
-  Line, 
-  AreaChart, 
-  Area 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  AreaChart,
+  Area
 } from 'recharts';
 
 /// --- Constants & Types ---
@@ -148,12 +148,22 @@ import {
   TaskSubmission,
   Transaction,
   Withdrawal,
-  Coupon
+  Coupon,
+  VENTURES,
+  UserData,
+  TaskData,
+  CouponData,
+  Announcement,
+  CouponUsage,
+  calculateCommission,
+  OperationType
 } from './types';
 
 import { encrypt, getDeviceFingerprint } from './lib/security';
 import OnboardingFlow from './components/OnboardingFlow';
-import { handleFirestoreError } from './types'; // Assuming this helper is in types.ts or similar
+import { handleFirestoreError } from './types';
+
+const ROLES = VentureRoleMap;
 
 // --- Local util: applyCoupon (not in shared types) ---
 const applyCoupon = async (couponCode: string, buyerId: string, productId: string, productPrice: number) => {
@@ -180,7 +190,7 @@ const applyCoupon = async (couponCode: string, buyerId: string, productId: strin
 
 function PromotionCelebration({ role, onDismiss }: { role: string, onDismiss: () => void }) {
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -195,7 +205,7 @@ function PromotionCelebration({ role, onDismiss }: { role: string, onDismiss: ()
         >
           <ShieldCheck size={64} className="text-black" />
         </motion.div>
-        <motion.h2 
+        <motion.h2
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.3 }}
@@ -203,7 +213,7 @@ function PromotionCelebration({ role, onDismiss }: { role: string, onDismiss: ()
         >
           Congratulations!
         </motion.h2>
-        <motion.p 
+        <motion.p
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.4 }}
@@ -263,7 +273,7 @@ class ErrorBoundary extends React.Component<any, any> {
           <p className="text-gray-400 text-sm mb-8 max-w-xs">
             We've encountered an unexpected error. Our team has been notified.
           </p>
-          <button 
+          <button
             onClick={() => window.location.reload()}
             className="bg-[#E8B84B] text-black font-bold px-8 py-4 rounded-2xl active:scale-95 transition-transform shadow-lg shadow-[#E8B84B]/20"
           >
@@ -299,7 +309,7 @@ export default function App() {
 function MainApp() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
-  const [onboardingStep, setOnboardingStep] = useState(0); 
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [userData, setUserData] = useState<Partial<UserProfile>>({
     level: 'Bronze',
@@ -311,7 +321,7 @@ function MainApp() {
     onboardingStatus: 'not_started',
     savingsPercent: 10
   });
-  
+
   const [error, setError] = useState<string | null>(null);
   const [isNewUser, setIsNewUser] = useState(false);
   const [phoneAuthStep, setPhoneAuthStep] = useState<'number' | 'otp'>('number');
@@ -475,7 +485,7 @@ function MainApp() {
     <div className="min-h-screen bg-[#0A0A0A] text-white font-sans selection:bg-[#E8B84B]/30">
       {onboardingStep > 0 && (
         <div className="fixed top-0 left-0 w-full h-1 bg-[#1A1A1A] z-50">
-          <motion.div 
+          <motion.div
             className="h-full bg-[#E8B84B] shadow-[0_0_10px_#E8B84B]"
             initial={{ width: 0 }}
             animate={{ width: `${(onboardingStep / 7) * 100}%` }}
@@ -494,8 +504,10 @@ function MainApp() {
         />
       ) : (
         <div className="max-w-2xl mx-auto px-4 py-12">
-          <OnboardingFlow 
-            onComplete={handleOnboardingComplete} 
+          <OnboardingFlow
+            user={user}
+            onComplete={handleOnboardingComplete}
+            onCancel={() => { }}
             userInfo={{
               email: user?.email || '',
               phone: user?.phoneNumber || '',
@@ -506,7 +518,7 @@ function MainApp() {
       )}
 
       {error && (
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm"
@@ -534,7 +546,7 @@ function TaskCard({ task, now, onAccept, onSkip }: { task: TaskData, now: number
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
       className="bg-[#1A1A1A] p-4 rounded-2xl border border-gray-800 flex flex-col gap-4"
@@ -550,13 +562,13 @@ function TaskCard({ task, now, onAccept, onSkip }: { task: TaskData, now: number
         <span className="text-[#00C9A7] font-black">₹{task.earning}</span>
       </div>
       <div className="flex gap-3">
-        <button 
+        <button
           onClick={() => onAccept(task.id)}
           className="flex-1 bg-[#00C9A7] text-black font-bold py-2.5 rounded-xl text-sm active:scale-95 transition-transform"
         >
           Accept
         </button>
-        <button 
+        <button
           onClick={() => onSkip(task.id)}
           className="flex-1 bg-gray-800 text-gray-400 font-bold py-2.5 rounded-xl text-sm active:scale-95 transition-transform"
         >
@@ -580,7 +592,7 @@ function CouponCard({ coupon, userData, now }: { coupon: CouponData | null, user
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       className="bg-gradient-to-br from-[#1A1A1A] to-[#111111] p-6 rounded-3xl border border-gray-800 relative overflow-hidden"
@@ -596,9 +608,9 @@ function CouponCard({ coupon, userData, now }: { coupon: CouponData | null, user
           </span>
         </div>
         <h2 className="text-3xl font-black text-white mb-4 tracking-wider">{coupon?.code || 'PLEX-XXXX'}</h2>
-        
+
         <div className="w-full h-1.5 bg-gray-800 rounded-full mb-6 overflow-hidden">
-          <motion.div 
+          <motion.div
             className="h-full bg-[#E8B84B]"
             initial={{ width: '100%' }}
             animate={{ width: `${getCouponProgress()}%` }}
@@ -606,7 +618,7 @@ function CouponCard({ coupon, userData, now }: { coupon: CouponData | null, user
           />
         </div>
 
-        <button 
+        <button
           onClick={() => {
             const message = `Check out ${userData?.venture}! Use my code ${coupon?.code} for discount: https://workplex.hvrs.com/shop`;
             window.open(`https://wa.me/?text=${encodeURIComponent(message)}`);
@@ -666,10 +678,10 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
   useEffect(() => {
     const fetchAIPrediction = async () => {
       const pendingCount = tasks.filter(t => t.status === 'assigned').length;
-      const avgEarning = tasks.reduce((a,b) => a + b.earning, 0) / (tasks.length || 1);
-      setAiPrediction({ 
-        predictedEarning: pendingCount * avgEarning, 
-        message: `Complete ${pendingCount} more tasks to earn Rs.${Math.round(pendingCount * avgEarning)} extra today!` 
+      const avgEarning = tasks.reduce((a, b) => a + b.earning, 0) / (tasks.length || 1);
+      setAiPrediction({
+        predictedEarning: pendingCount * avgEarning,
+        message: `Complete ${pendingCount} more tasks to earn Rs.${Math.round(pendingCount * avgEarning)} extra today!`
       });
     };
     if (user.uid) fetchAIPrediction();
@@ -836,306 +848,306 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
       </div>
 
       <div className="flex-1 min-h-screen pb-32 md:pb-6 md:ml-64 relative w-full md:w-[calc(100%-16rem)]">
-      <AnimatePresence>
-        {toast && (
-          <motion.div 
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9 }}
-            className="fixed bottom-32 left-6 right-6 z-[100] bg-[#00C9A7] text-black p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,201,167,0.3)] flex items-center gap-3"
-          >
-            <div className="w-10 h-10 bg-black/10 rounded-full flex items-center justify-center">
-              <TrendingUp size={20} />
-            </div>
-            <div>
-              <p className="font-black text-sm">₹{toast.amount} Earned!</p>
-              <p className="text-xs font-bold opacity-70">{toast.source}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {activeTab === 'home' ? (
-        <>
-          {userData?.showPromotionCelebration && (
-            <LevelUpCelebration 
-              level={userData.level} 
-              uid={user.uid}
-              onClose={() => updateDoc(doc(db, 'users', user.uid), { showPromotionCelebration: false })} 
-            />
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="fixed bottom-32 left-6 right-6 z-[100] bg-[#00C9A7] text-black p-4 rounded-2xl shadow-[0_10px_30px_rgba(0,201,167,0.3)] flex items-center gap-3"
+            >
+              <div className="w-10 h-10 bg-black/10 rounded-full flex items-center justify-center">
+                <TrendingUp size={20} />
+              </div>
+              <div>
+                <p className="font-black text-sm">₹{toast.amount} Earned!</p>
+                <p className="text-xs font-bold opacity-70">{toast.source}</p>
+              </div>
+            </motion.div>
           )}
-          {/* Top Bar */}
-          <motion.div 
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="p-6 bg-[#111111] border-b border-gray-800"
-          >
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <img src={userData?.photoURL || 'https://picsum.photos/seed/user/200'} className="w-14 h-14 rounded-2xl object-cover border border-[#E8B84B]/30" alt="Profile" referrerPolicy="no-referrer" />
-                  <div className="absolute -bottom-1 -right-1 bg-[#E8B84B] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-md">
-                    {userData?.level || 'Bronze'}
+        </AnimatePresence>
+
+        {activeTab === 'home' ? (
+          <>
+            {userData?.showPromotionCelebration && (
+              <LevelUpCelebration
+                level={userData.level}
+                uid={user.uid}
+                onClose={() => updateDoc(doc(db, 'users', user.uid), { showPromotionCelebration: false })}
+              />
+            )}
+            {/* Top Bar */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-6 bg-[#111111] border-b border-gray-800"
+            >
+              <div className="flex justify-between items-start mb-6">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <img src={userData?.photoURL || 'https://picsum.photos/seed/user/200'} className="w-14 h-14 rounded-2xl object-cover border border-[#E8B84B]/30" alt="Profile" referrerPolicy="no-referrer" />
+                    <div className="absolute -bottom-1 -right-1 bg-[#E8B84B] text-black text-[10px] font-bold px-1.5 py-0.5 rounded-md">
+                      {userData?.level || 'Bronze'}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold">{userData?.name || 'User'}</h2>
+                    <span className="text-xs bg-[#E8B84B]/10 text-[#E8B84B] px-2 py-0.5 rounded-full border border-[#E8B84B]/20">
+                      {userData?.venture} {userData?.role}
+                    </span>
                   </div>
                 </div>
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-1 text-[#E8B84B]">
+                    <Flame size={18} fill="currentColor" />
+                    <span className="font-bold">{userData?.streak || 0} days</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-end">
                 <div>
-                  <h2 className="text-lg font-bold">{userData?.name || 'User'}</h2>
-                  <span className="text-xs bg-[#E8B84B]/10 text-[#E8B84B] px-2 py-0.5 rounded-full border border-[#E8B84B]/20">
-                    {userData?.venture} {userData?.role}
-                  </span>
+                  <p className="text-gray-500 text-xs uppercase font-bold tracking-widest mb-1">Earned Balance</p>
+                  <h1 className="text-4xl font-black text-white">₹{(userData?.wallets?.earned || 0).toLocaleString()}</h1>
+                  <p className="text-[#00C9A7] text-sm font-medium mt-1">Today: +₹{userData?.todayEarnings || 0}</p>
                 </div>
-              </div>
-              <div className="flex flex-col items-end">
-                <div className="flex items-center gap-1 text-[#E8B84B]">
-                  <Flame size={18} fill="currentColor" />
-                  <span className="font-bold">{userData?.streak || 0} days</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-end">
-              <div>
-                <p className="text-gray-500 text-xs uppercase font-bold tracking-widest mb-1">Earned Balance</p>
-                <h1 className="text-4xl font-black text-white">₹{(userData?.wallets?.earned || 0).toLocaleString()}</h1>
-                <p className="text-[#00C9A7] text-sm font-medium mt-1">Today: +₹{userData?.todayEarnings || 0}</p>
-              </div>
-              <button 
-                onClick={() => setActiveTab('wallet')}
-                className="bg-[#E8B84B] text-black p-3 rounded-2xl shadow-[0_0_20px_rgba(232,184,75,0.2)] active:scale-95 transition-transform"
-              >
-                <Wallet size={24} />
-              </button>
-            </div>
-          </motion.div>
-
-          <div className="px-6 space-y-6 mt-6">
-            {/* Live Earnings Feed */}
-            <div className="bg-[#111111] py-3 rounded-2xl border border-gray-800 overflow-hidden">
-              <div className="flex items-center gap-2 px-4 mb-2">
-                <div className="w-1.5 h-1.5 bg-[#00C9A7] rounded-full animate-pulse"></div>
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Live Earnings Feed</span>
-              </div>
-              <div className="h-8 overflow-hidden relative">
-                <motion.div 
-                  animate={{ y: [0, -32 * (globalTransactions.length || 1)] }}
-                  transition={{ 
-                    duration: (globalTransactions.length || 1) * 3, 
-                    repeat: Infinity, 
-                    ease: "linear" 
-                  }}
-                  className="space-y-0"
+                <button
+                  onClick={() => setActiveTab('wallet')}
+                  className="bg-[#E8B84B] text-black p-3 rounded-2xl shadow-[0_0_20px_rgba(232,184,75,0.2)] active:scale-95 transition-transform"
                 >
-                  {[...globalTransactions, ...globalTransactions].map((tx, idx) => (
-                    <div key={idx} className="h-8 flex items-center px-4 gap-2">
-                      <span className="text-[#00C9A7] font-black text-xs">₹{tx.amount}</span>
-                      <span className="text-gray-400 text-[10px] truncate">from {tx.description}</span>
-                      <span className="text-gray-600 text-[9px] ml-auto">
-                        {tx.createdAt ? new Date(tx.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
-                      </span>
-                    </div>
-                  ))}
-                </motion.div>
-              </div>
-            </div>
-
-            {/* Coupon Card */}
-            {(userData?.role === 'Marketer' || userData?.role === 'Content Creator') && (
-              <MemoizedCouponCard coupon={coupon} userData={userData} now={now} />
-            )}
-
-            {/* AI Earnings Predictor */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-[#E8B84B] p-6 rounded-3xl text-black flex items-center justify-between shadow-[0_10px_30px_rgba(232,184,75,0.2)]"
-            >
-              <div className="max-w-[70%]">
-                <h3 className="font-black text-lg leading-tight">AI Predictor</h3>
-                <p className="text-sm font-bold opacity-80 mt-1">
-                  {aiPrediction?.message || `Complete ${predictor.count} more tasks to earn ₹${predictor.extra} extra today`}
-                </p>
-              </div>
-              <div className="w-14 h-14 bg-black/10 rounded-2xl flex items-center justify-center">
-                <TrendingUp size={28} />
+                  <Wallet size={24} />
+                </button>
               </div>
             </motion.div>
 
-            {/* Today's Tasks */}
-            <section>
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold">Today's Tasks</h3>
-                <button className="text-[#E8B84B] text-sm font-bold flex items-center gap-1">
-                  View All <ChevronRight size={16} />
-                </button>
+            <div className="px-6 space-y-6 mt-6">
+              {/* Live Earnings Feed */}
+              <div className="bg-[#111111] py-3 rounded-2xl border border-gray-800 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 mb-2">
+                  <div className="w-1.5 h-1.5 bg-[#00C9A7] rounded-full animate-pulse"></div>
+                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Live Earnings Feed</span>
+                </div>
+                <div className="h-8 overflow-hidden relative">
+                  <motion.div
+                    animate={{ y: [0, -32 * (globalTransactions.length || 1)] }}
+                    transition={{
+                      duration: (globalTransactions.length || 1) * 3,
+                      repeat: Infinity,
+                      ease: "linear"
+                    }}
+                    className="space-y-0"
+                  >
+                    {[...globalTransactions, ...globalTransactions].map((tx, idx) => (
+                      <div key={idx} className="h-8 flex items-center px-4 gap-2">
+                        <span className="text-[#00C9A7] font-black text-xs">₹{tx.amount}</span>
+                        <span className="text-gray-400 text-[10px] truncate">from {tx.description}</span>
+                        <span className="text-gray-600 text-[9px] ml-auto">
+                          {tx.createdAt ? new Date(tx.createdAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                        </span>
+                      </div>
+                    ))}
+                  </motion.div>
+                </div>
               </div>
-              <div className="space-y-4">
-                {tasks.length > 0 ? tasks.map((task) => (
-                  <MemoizedTaskCard 
-                    key={task.id} 
-                    task={task} 
-                    now={now} 
-                    onAccept={handleAcceptTask} 
-                    onSkip={handleSkipTask} 
-                  />
-                )) : (
-                  <div className="bg-[#1A1A1A] p-8 rounded-3xl border border-dashed border-gray-800 flex flex-col items-center text-center">
-                    <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mb-3">
-                      <ListTodo className="text-gray-600" />
+
+              {/* Coupon Card */}
+              {(userData?.role === 'Marketer' || userData?.role === 'Content Creator') && (
+                <MemoizedCouponCard coupon={coupon} userData={userData} now={now} />
+              )}
+
+              {/* AI Earnings Predictor */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="bg-[#E8B84B] p-6 rounded-3xl text-black flex items-center justify-between shadow-[0_10px_30px_rgba(232,184,75,0.2)]"
+              >
+                <div className="max-w-[70%]">
+                  <h3 className="font-black text-lg leading-tight">AI Predictor</h3>
+                  <p className="text-sm font-bold opacity-80 mt-1">
+                    {aiPrediction?.message || `Complete ${predictor.count} more tasks to earn ₹${predictor.extra} extra today`}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-black/10 rounded-2xl flex items-center justify-center">
+                  <TrendingUp size={28} />
+                </div>
+              </motion.div>
+
+              {/* Today's Tasks */}
+              <section>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold">Today's Tasks</h3>
+                  <button className="text-[#E8B84B] text-sm font-bold flex items-center gap-1">
+                    View All <ChevronRight size={16} />
+                  </button>
+                </div>
+                <div className="space-y-4">
+                  {tasks.length > 0 ? tasks.map((task) => (
+                    <MemoizedTaskCard
+                      key={task.id}
+                      task={task}
+                      now={now}
+                      onAccept={handleAcceptTask}
+                      onSkip={handleSkipTask}
+                    />
+                  )) : (
+                    <div className="bg-[#1A1A1A] p-8 rounded-3xl border border-dashed border-gray-800 flex flex-col items-center text-center">
+                      <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mb-3">
+                        <ListTodo className="text-gray-600" />
+                      </div>
+                      <p className="text-gray-600 text-sm italic">No tasks assigned for now. Check back later!</p>
                     </div>
-                    <p className="text-gray-600 text-sm italic">No tasks assigned for now. Check back later!</p>
-                  </div>
-                )}
+                  )}
+                </div>
+              </section>
+
+              {/* Lead Marketer Progress */}
+              <div className="bg-[#111111] p-6 rounded-3xl border border-gray-800">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-bold text-gray-300">Journey to Lead Marketer</h3>
+                  <span className="text-[#E8B84B] font-black">₹{(userData?.monthlyEarnings || 0).toLocaleString()}/50k</span>
+                </div>
+                <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden mb-3">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7]"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, ((userData?.monthlyEarnings || 0) / 50000) * 100)}%` }}
+                    transition={{ type: 'spring', damping: 20 }}
+                  />
+                </div>
+                <p className="text-gray-500 text-xs font-bold">{userData?.daysActiveThisMonth || 0} days active this month</p>
               </div>
+            </div>
+          </>
+        ) : activeTab === 'leaderboard' && userData ? (
+          <div className="p-6 pb-32">
+            <LeaderboardTab venture={userData.venture} />
+          </div>
+        ) : activeTab === 'chat' && userData ? (
+          <div className="p-6 pb-32">
+            <TeamChat leadId={user.uid} leadName={userData.name} />
+          </div>
+        ) : activeTab === 'tasks' && userData ? (
+          <TasksScreen user={user} userData={userData as UserData} />
+        ) : activeTab === 'wallet' && userData ? (
+          <WalletScreen userData={userData as UserData} />
+        ) : activeTab === 'catalog' && userData ? (
+          <div className="p-6 pb-32">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Product Catalog</h2>
+              <div className="flex gap-2">
+                <button className="p-2 bg-[#1A1A1A] rounded-xl border border-gray-800"><Search size={20} /></button>
+                <button className="p-2 bg-[#1A1A1A] rounded-xl border border-gray-800"><Filter size={20} /></button>
+              </div>
+            </div>
+
+            {/* AI Recommended Section */}
+            <section className="mb-8">
+              <div className="flex items-center gap-2 mb-4">
+                <Sparkles className="text-[#E8B84B]" size={20} />
+                <h3 className="text-lg font-bold">AI Recommended for You</h3>
+              </div>
+
+              {isAiLoading ? (
+                <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                  {[1, 2, 3].map(i => (
+                    <div key={i} className="min-w-[200px] h-32 bg-[#1A1A1A] rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : Array.isArray(aiRecommendations) ? (
+                <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+                  {aiRecommendations.map((cat: string, idx: number) => (
+                    <motion.div
+                      key={idx}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="min-w-[240px] bg-gradient-to-br from-[#E8B84B]/20 to-[#1A1A1A] p-5 rounded-3xl border border-[#E8B84B]/20"
+                    >
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-xs font-bold text-[#E8B84B] bg-[#E8B84B]/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Trending
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-white text-lg mb-1">{cat}</h4>
+                      <p className="text-gray-400 text-xs leading-relaxed">AI Recommended Category</p>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-6 bg-[#1A1A1A] rounded-3xl border border-dashed border-gray-800 text-center">
+                  <p className="text-gray-500 text-sm italic">AI is analyzing trends for you...</p>
+                </div>
+              )}
             </section>
 
-            {/* Lead Marketer Progress */}
-            <div className="bg-[#111111] p-6 rounded-3xl border border-gray-800">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-gray-300">Journey to Lead Marketer</h3>
-                <span className="text-[#E8B84B] font-black">₹{(userData?.monthlyEarnings || 0).toLocaleString()}/50k</span>
-              </div>
-              <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden mb-3">
-                <motion.div 
-                  className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7]"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, ((userData?.monthlyEarnings || 0) / 50000) * 100)}%` }}
-                  transition={{ type: 'spring', damping: 20 }}
-                />
-              </div>
-              <p className="text-gray-500 text-xs font-bold">{userData?.daysActiveThisMonth || 0} days active this month</p>
-            </div>
-          </div>
-        </>
-      ) : activeTab === 'leaderboard' && userData ? (
-        <div className="p-6 pb-32">
-          <LeaderboardTab venture={userData.venture} />
-        </div>
-      ) : activeTab === 'chat' && userData ? (
-        <div className="p-6 pb-32">
-          <TeamChat leadId={user.uid} leadName={userData.name} />
-        </div>
-      ) : activeTab === 'tasks' && userData ? (
-        <TasksScreen user={user} userData={userData as UserData} />
-      ) : activeTab === 'wallet' && userData ? (
-        <WalletScreen userData={userData as UserData} />
-      ) : activeTab === 'catalog' && userData ? (
-        <div className="p-6 pb-32">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold">Product Catalog</h2>
-            <div className="flex gap-2">
-              <button className="p-2 bg-[#1A1A1A] rounded-xl border border-gray-800"><Search size={20} /></button>
-              <button className="p-2 bg-[#1A1A1A] rounded-xl border border-gray-800"><Filter size={20} /></button>
-            </div>
-          </div>
-
-          {/* AI Recommended Section */}
-          <section className="mb-8">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="text-[#E8B84B]" size={20} />
-              <h3 className="text-lg font-bold">AI Recommended for You</h3>
-            </div>
-            
-            {isAiLoading ? (
-              <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-                {[1, 2, 3].map(i => (
-                  <div key={i} className="min-w-[200px] h-32 bg-[#1A1A1A] rounded-2xl animate-pulse" />
-                ))}
-              </div>
-            ) : Array.isArray(aiRecommendations) ? (
-              <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-                {aiRecommendations.map((cat: string, idx: number) => (
-                  <motion.div 
-                    key={idx}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: idx * 0.1 }}
-                    className="min-w-[240px] bg-gradient-to-br from-[#E8B84B]/20 to-[#1A1A1A] p-5 rounded-3xl border border-[#E8B84B]/20"
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="text-xs font-bold text-[#E8B84B] bg-[#E8B84B]/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
-                        Trending
-                      </span>
-                    </div>
-                    <h4 className="font-bold text-white text-lg mb-1">{cat}</h4>
-                    <p className="text-gray-400 text-xs leading-relaxed">AI Recommended Category</p>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-6 bg-[#1A1A1A] rounded-3xl border border-dashed border-gray-800 text-center">
-                <p className="text-gray-500 text-sm italic">AI is analyzing trends for you...</p>
-              </div>
-            )}
-          </section>
-
-          {/* Regular Categories */}
-          <div className="grid grid-cols-2 gap-4">
-            {['Electronics', 'Fashion', 'Home Decor', 'Beauty', 'Gadgets', 'Accessories'].map((cat, idx) => (
-              <div key={idx} className="bg-[#1A1A1A] p-6 rounded-3xl border border-gray-800 flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform">
-                <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center">
-                  <ShoppingBag className="text-gray-400" />
+            {/* Regular Categories */}
+            <div className="grid grid-cols-2 gap-4">
+              {['Electronics', 'Fashion', 'Home Decor', 'Beauty', 'Gadgets', 'Accessories'].map((cat, idx) => (
+                <div key={idx} className="bg-[#1A1A1A] p-6 rounded-3xl border border-gray-800 flex flex-col items-center justify-center gap-3 active:scale-95 transition-transform">
+                  <div className="w-12 h-12 bg-gray-800 rounded-2xl flex items-center justify-center">
+                    <ShoppingBag className="text-gray-400" />
+                  </div>
+                  <span className="font-bold text-sm">{cat}</span>
                 </div>
-                <span className="font-bold text-sm">{cat}</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      ) : activeTab === 'profile' && userData ? (
-        <ProfileScreen 
-          userData={userData} 
-          teamSize={teamSize} 
-          onLogout={() => signOut(auth)} 
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center h-[80vh] text-gray-500">
-          <Loader2 className="w-8 h-8 animate-spin mb-4 text-[#E8B84B]" />
-          <p className="text-sm font-medium uppercase tracking-widest">{activeTab} screen coming soon</p>
-        </div>
-      )}
-
-      {/* Admin Announcements Slider */}
-      <div className="fixed bottom-24 md:bottom-0 left-0 md:left-64 w-full md:w-[calc(100%-16rem)] bg-[#E8B84B]/5 border-y border-[#E8B84B]/10 py-3 overflow-hidden">
-        <AnnouncementSlider announcements={announcements} />
-      </div>
-
-      {/* Bottom Nav - Mobile only */}
-      <div className="md:hidden fixed bottom-0 left-0 w-full bg-[#0A0A0A]/80 backdrop-blur-xl border-t border-gray-800 px-4 py-4 flex justify-between items-center z-40 overflow-x-auto no-scrollbar gap-4">
-        <NavButton active={activeTab === 'home'} icon={<Home />} label="Home" onClick={() => setActiveTab('home')} />
-        {userData?.role === 'Reseller' && (
-          <NavButton active={activeTab === 'catalog'} icon={<ShoppingBag />} label="Catalog" onClick={() => setActiveTab('catalog')} />
-        )}
-        {(userData?.role === 'Lead Marketer' || userData?.role === 'Manager') && (
-          <NavButton active={activeTab === 'chat'} icon={<Users />} label="Team" onClick={() => setActiveTab('chat')} />
-        )}
-        <NavButton active={activeTab === 'tasks'} icon={<ListTodo />} label="Tasks" onClick={() => setActiveTab('tasks')} />
-        <NavButton active={activeTab === 'leaderboard'} icon={<Trophy />} label="Ranks" onClick={() => setActiveTab('leaderboard')} />
-        <NavButton active={activeTab === 'wallet'} icon={<Wallet />} label="Wallet" onClick={() => setActiveTab('wallet')} />
-        <NavButton active={activeTab === 'profile'} icon={<UserCircle />} label="Profile" onClick={() => setActiveTab('profile')} />
-      </div>
-
-      {/* Mystery Task Popup */}
-      <AnimatePresence>
-        {mysteryTask && (
-          <MysteryTaskPopup 
-            task={mysteryTask} 
-            onAccept={handleAcceptMysteryTask} 
-            onClose={() => setMysteryTask(null)} 
+        ) : activeTab === 'profile' && userData ? (
+          <ProfileScreen
+            userData={userData}
+            teamSize={teamSize}
+            onLogout={() => signOut(auth)}
           />
+        ) : (
+          <div className="flex flex-col items-center justify-center h-[80vh] text-gray-500">
+            <Loader2 className="w-8 h-8 animate-spin mb-4 text-[#E8B84B]" />
+            <p className="text-sm font-medium uppercase tracking-widest">{activeTab} screen coming soon</p>
+          </div>
         )}
-      </AnimatePresence>
 
-      {/* Level Up Celebration */}
-      <AnimatePresence>
-        {showCelebration && (
-          <LevelUpCelebration 
-            level={userData?.level || 'Bronze'} 
-            uid={user.uid}
-            onClose={handleDismissCelebration}
-          />
-        )}
-      </AnimatePresence>
+        {/* Admin Announcements Slider */}
+        <div className="fixed bottom-24 md:bottom-0 left-0 md:left-64 w-full md:w-[calc(100%-16rem)] bg-[#E8B84B]/5 border-y border-[#E8B84B]/10 py-3 overflow-hidden">
+          <AnnouncementSlider announcements={announcements} />
+        </div>
 
-      <style>{`
+        {/* Bottom Nav - Mobile only */}
+        <div className="md:hidden fixed bottom-0 left-0 w-full bg-[#0A0A0A]/80 backdrop-blur-xl border-t border-gray-800 px-4 py-4 flex justify-between items-center z-40 overflow-x-auto no-scrollbar gap-4">
+          <NavButton active={activeTab === 'home'} icon={<Home />} label="Home" onClick={() => setActiveTab('home')} />
+          {userData?.role === 'Reseller' && (
+            <NavButton active={activeTab === 'catalog'} icon={<ShoppingBag />} label="Catalog" onClick={() => setActiveTab('catalog')} />
+          )}
+          {(userData?.role === 'Lead Marketer' || userData?.role === 'Manager') && (
+            <NavButton active={activeTab === 'chat'} icon={<Users />} label="Team" onClick={() => setActiveTab('chat')} />
+          )}
+          <NavButton active={activeTab === 'tasks'} icon={<ListTodo />} label="Tasks" onClick={() => setActiveTab('tasks')} />
+          <NavButton active={activeTab === 'leaderboard'} icon={<Trophy />} label="Ranks" onClick={() => setActiveTab('leaderboard')} />
+          <NavButton active={activeTab === 'wallet'} icon={<Wallet />} label="Wallet" onClick={() => setActiveTab('wallet')} />
+          <NavButton active={activeTab === 'profile'} icon={<UserCircle />} label="Profile" onClick={() => setActiveTab('profile')} />
+        </div>
+
+        {/* Mystery Task Popup */}
+        <AnimatePresence>
+          {mysteryTask && (
+            <MysteryTaskPopup
+              task={mysteryTask}
+              onAccept={handleAcceptMysteryTask}
+              onClose={() => setMysteryTask(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Level Up Celebration */}
+        <AnimatePresence>
+          {showCelebration && (
+            <LevelUpCelebration
+              level={userData?.level || 'Bronze'}
+              uid={user.uid}
+              onClose={handleDismissCelebration}
+            />
+          )}
+        </AnimatePresence>
+
+        <style>{`
         @keyframes marquee {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
@@ -1240,15 +1252,15 @@ export function PhoneInput({ onSubmit }: { onSubmit: (phone: string) => void }) 
       <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Phone Number</label>
       <div className="relative">
         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">+91</span>
-        <input 
-          type="tel" 
-          placeholder="Enter mobile number" 
+        <input
+          type="tel"
+          placeholder="Enter mobile number"
           className="w-full bg-black border border-gray-800 rounded-xl py-4 pl-14 pr-4 focus:border-[#E8B84B] outline-none transition-all"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
       </div>
-      <button 
+      <button
         onClick={() => onSubmit(`+91${phone}`)}
         disabled={phone.length !== 10}
         className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-50 transition-all active:scale-[0.98]"
@@ -1264,15 +1276,15 @@ export function OtpInput({ onSubmit, onBack }: { onSubmit: (otp: string) => void
   return (
     <div className="space-y-4">
       <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Enter OTP</label>
-      <input 
-        type="text" 
-        placeholder="6-digit code" 
+      <input
+        type="text"
+        placeholder="6-digit code"
         maxLength={6}
         className="w-full bg-black border border-gray-800 rounded-xl py-4 px-4 text-center text-2xl tracking-[1em] focus:border-[#E8B84B] outline-none transition-all"
         value={otp}
         onChange={(e) => setOtp(e.target.value)}
       />
-      <button 
+      <button
         onClick={() => onSubmit(otp)}
         disabled={otp.length !== 6}
         className="w-full bg-[#00C9A7] text-black font-bold py-4 rounded-xl disabled:opacity-50 transition-all active:scale-[0.98]"
@@ -1306,8 +1318,8 @@ function PersonalInfoForm({ onNext }: { onNext: (data: { name: string, age: numb
     <div className="space-y-6">
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">Full Name</label>
-        <input 
-          type="text" 
+        <input
+          type="text"
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -1315,8 +1327,8 @@ function PersonalInfoForm({ onNext }: { onNext: (data: { name: string, age: numb
       </div>
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">Age</label>
-        <input 
-          type="number" 
+        <input
+          type="number"
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none"
           value={age}
           onChange={(e) => setAge(e.target.value)}
@@ -1375,7 +1387,7 @@ function VentureSelect({ onNext }: { onNext: (v: Venture) => void }) {
   return (
     <div className="grid grid-cols-1 gap-4">
       {VENTURES.map(v => (
-        <button 
+        <button
           key={v}
           onClick={() => onNext(v)}
           className="p-6 bg-[#1A1A1A] border border-gray-800 rounded-2xl text-left hover:border-[#E8B84B] hover:bg-[#252525] transition-all group"
@@ -1397,7 +1409,7 @@ function RoleSelect({ venture, onNext }: { venture: Venture, onNext: (r: string)
   return (
     <div className="grid grid-cols-1 gap-4">
       {roles.map(r => (
-        <button 
+        <button
           key={r}
           onClick={() => onNext(r)}
           className="p-6 bg-[#1A1A1A] border border-gray-800 rounded-2xl text-left hover:border-[#00C9A7] hover:bg-[#252525] transition-all group"
@@ -1420,8 +1432,8 @@ function PaymentForm({ onNext }: { onNext: (data: { upiId: string, bankAccount: 
     <div className="space-y-6">
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">UPI ID</label>
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="username@bank"
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none"
           value={upi}
@@ -1430,14 +1442,14 @@ function PaymentForm({ onNext }: { onNext: (data: { upiId: string, bankAccount: 
       </div>
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">Bank Account Number</label>
-        <input 
-          type="text" 
+        <input
+          type="text"
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none"
           value={bank}
           onChange={(e) => setBank(e.target.value)}
         />
       </div>
-      <button 
+      <button
         onClick={() => onNext({ upiId: upi, bankAccount: bank })}
         disabled={!upi || !bank}
         className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-50"
@@ -1460,8 +1472,8 @@ function IdentityForm({ onNext }: { onNext: (data: { aadhaar: string, pan: strin
       </div>
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">Aadhaar Number</label>
-        <input 
-          type="text" 
+        <input
+          type="text"
           maxLength={12}
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none"
           value={aadhaar}
@@ -1470,15 +1482,15 @@ function IdentityForm({ onNext }: { onNext: (data: { aadhaar: string, pan: strin
       </div>
       <div className="space-y-2">
         <label className="text-xs font-bold text-gray-500 uppercase">PAN Number</label>
-        <input 
-          type="text" 
+        <input
+          type="text"
           maxLength={10}
           className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl py-4 px-4 focus:border-[#E8B84B] outline-none uppercase"
           value={pan}
           onChange={(e) => setPan(e.target.value.toUpperCase())}
         />
       </div>
-      <button 
+      <button
         onClick={() => onNext({ aadhaar, pan })}
         disabled={aadhaar.length !== 12 || pan.length !== 10}
         className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-50"
@@ -1503,7 +1515,7 @@ function AgreementStep({ onNext }: { onNext: () => void }) {
         <p className="mb-4">4. Confidentiality: You agree to keep all business data confidential.</p>
         <p>5. Termination: Either party can terminate this agreement at any time.</p>
       </div>
-      
+
       <label className="flex items-center gap-3 cursor-pointer group">
         <div className={`w-6 h-6 rounded border flex items-center justify-center transition-all ${agreed ? 'bg-[#00C9A7] border-[#00C9A7]' : 'border-gray-700 group-hover:border-gray-500'}`}>
           <input type="checkbox" className="hidden" checked={agreed} onChange={() => setAgreed(!agreed)} />
@@ -1512,7 +1524,7 @@ function AgreementStep({ onNext }: { onNext: () => void }) {
         <span className="text-sm text-gray-300">I Agree to the Independent Contractor Agreement</span>
       </label>
 
-      <button 
+      <button
         onClick={onNext}
         disabled={!agreed}
         className="w-full bg-[#00C9A7] text-black font-bold py-4 rounded-xl disabled:opacity-50 shadow-[0_0_20px_rgba(0,201,167,0.2)]"

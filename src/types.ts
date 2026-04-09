@@ -2,6 +2,12 @@
  * WorkPlex — Shared Types & Constants
  */
 import CryptoJS from 'crypto-js';
+import { Timestamp } from 'firebase/firestore';
+import type { User as FirebaseUser } from 'firebase/auth';
+
+// Re-export Timestamp for other files
+export { Timestamp };
+export type { FirebaseUser };
 
 // --- Constants ---
 export const AES_SECRET = (import.meta as any).env?.VITE_AES_SECRET || 'fallback-secret';
@@ -9,14 +15,14 @@ export const VENTURES = ['BuyRix', 'Vyuma', 'TrendyVerse', 'Growplex'] as const;
 
 export type Venture = 'BuyRix' | 'Vyuma' | 'TrendyVerse' | 'Growplex';
 
-export type UserRole = 
-  | 'marketer' 
-  | 'content_creator' 
-  | 'reseller' 
-  | 'lead_marketer' 
-  | 'manager' 
-  | 'client_acquirer' 
-  | 'support_agent' 
+export type UserRole =
+  | 'marketer'
+  | 'content_creator'
+  | 'reseller'
+  | 'lead_marketer'
+  | 'manager'
+  | 'client_acquirer'
+  | 'support_agent'
   | 'social_promoter'
   | 'sub_admin'
   | 'admin';
@@ -108,6 +114,121 @@ export interface SubAdmin {
   email: string;
   venture: string;
   createdAt: any;
+}
+
+// --- Additional types used across components ---
+export interface UserData {
+  uid: string;
+  name: string;
+  phone: string;
+  email?: string;
+  photoURL?: string;
+  username: string;
+  age: number;
+  venture: Venture;
+  role: UserRole;
+  upiId?: string;
+  bankAccount?: string;
+  level?: string;
+  streak?: number;
+  wallets?: {
+    earned: number;
+    pending: number;
+    bonus: number;
+    savings: number;
+  };
+  onboardingStatus?: string;
+  onboardingStep?: number;
+  contractSigned?: boolean;
+  kycDone?: boolean;
+  firstTaskDone?: boolean;
+  badges?: string[];
+  [key: string]: any;
+}
+
+export interface TaskData {
+  id: string;
+  title: string;
+  description?: string;
+  instructions?: string;
+  earnAmount: number;
+  earning?: number;
+  difficulty?: string;
+  deadline?: any;
+  status?: string;
+  venture?: string;
+  type?: string;
+  createdAt?: any;
+  [key: string]: any;
+}
+
+export interface CouponData {
+  id: string;
+  code: string;
+  ownerId: string;
+  isActive: boolean;
+  usageCount?: number;
+  totalEarned?: number;
+  expiresAt?: any;
+  [key: string]: any;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  message: string;
+  imageUrl?: string;
+  link?: string;
+  venture?: string;
+  createdAt?: any;
+  [key: string]: any;
+}
+
+export interface Transaction {
+  id: string;
+  userId: string;
+  type: 'earning' | 'withdrawal' | 'bonus' | 'streak' | 'referral';
+  amount: number;
+  status: 'pending' | 'completed' | 'rejected';
+  description?: string;
+  createdAt?: any;
+  [key: string]: any;
+}
+
+export interface Withdrawal {
+  id: string;
+  userId: string;
+  amount: number;
+  method: 'upi' | 'bank';
+  upiId?: string;
+  bankAccount?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  requestedAt?: any;
+  processedAt?: any;
+  [key: string]: any;
+}
+
+export interface Coupon {
+  id: string;
+  code: string;
+  ownerId: string;
+  isActive: boolean;
+  usageCount?: number;
+  totalEarned?: number;
+  [key: string]: any;
+}
+
+export interface CouponUsage {
+  id: string;
+  couponCode: string;
+  ownerId: string;
+  buyerId: string;
+  productId: string;
+  productPrice: number;
+  margin: number;
+  commissionAmount: number;
+  usedAt: any;
+  released: boolean;
 }
 
 // --- Enums ---
@@ -228,7 +349,7 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  
+
   const cache = new Set();
   const errString = JSON.stringify(errInfo, (key, value) => {
     if (typeof value === 'object' && value !== null) {

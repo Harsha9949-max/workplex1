@@ -71,7 +71,7 @@ export default function ProfileScreen({ userData, teamSize, onLogout }: ProfileS
       icon: <Calendar size={20} className="text-orange-500" />,
       color: 'text-orange-500'
     },
-    ...(userData.role === 'Lead Marketer' || userData.role === 'Manager' ? [{
+    ...(userData.role === 'lead_marketer' || userData.role === 'manager' ? [{
       label: 'Team Size',
       value: `${teamSize} Members`,
       icon: <Users size={20} className="text-[#00C9A7]" />,
@@ -257,7 +257,7 @@ export default function ProfileScreen({ userData, teamSize, onLogout }: ProfileS
       </div>
 
       {/* Referral Link */}
-      {(userData.role === 'Lead Marketer' || userData.role === 'Manager') && (
+      {(userData.role === 'lead_marketer' || userData.role === 'manager') && (
         <div className="bg-[#111111] p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50">
           <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
             <Share2 size={16} />

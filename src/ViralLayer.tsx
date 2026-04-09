@@ -1,28 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  collection, 
-  query, 
-  where, 
-  getDocs, 
-  doc, 
-  getDoc, 
-  onSnapshot, 
-  addDoc, 
-  serverTimestamp, 
-  orderBy, 
-  limit 
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  onSnapshot,
+  addDoc,
+  serverTimestamp,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  User, 
-  ShieldCheck, 
-  Trophy, 
-  Flame, 
-  Calendar, 
-  Share2, 
-  ShoppingBag, 
-  Send, 
+import {
+  User,
+  ShieldCheck,
+  Trophy,
+  Flame,
+  Calendar,
+  Share2,
+  ShoppingBag,
+  Send,
   ArrowLeft,
   ExternalLink,
   CheckCircle2
@@ -64,17 +64,17 @@ export function PublicProfile() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white p-6 pb-24">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md mx-auto"
       >
         <div className="flex flex-col items-center mb-8">
           <div className="relative mb-4">
-            <img 
-              src={userData.photoURL || 'https://picsum.photos/seed/user/200'} 
-              className="w-24 h-24 rounded-3xl object-cover border-2 border-[#E8B84B]" 
-              alt="Profile" 
+            <img
+              src={userData.photoURL || 'https://picsum.photos/seed/user/200'}
+              className="w-24 h-24 rounded-3xl object-cover border-2 border-[#E8B84B]"
+              alt="Profile"
               referrerPolicy="no-referrer"
             />
             <div className="absolute -bottom-2 -right-2 bg-[#E8B84B] text-black text-xs font-bold px-2 py-1 rounded-lg shadow-lg">
@@ -122,13 +122,13 @@ export function PublicProfile() {
         </div>
 
         <div className="space-y-4">
-          <button 
+          <button
             onClick={handleShare}
             className="w-full bg-[#1A1A1A] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 border border-gray-800 active:scale-95 transition-transform"
           >
             <Share2 size={20} /> {copied ? 'Link Copied!' : 'Share Profile'}
           </button>
-          <Link 
+          <Link
             to={`/?ref=${userData.id}`}
             className="w-full bg-[#E8B84B] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(232,184,75,0.2)] active:scale-95 transition-transform"
           >
@@ -155,7 +155,7 @@ export function ResellerShop() {
         if (!snap.empty) {
           const user = { id: snap.docs[0].id, ...snap.docs[0].data() };
           setUserData(user);
-          
+
           const pq = query(collection(db, 'products'), where('resellerId', '==', user.id));
           const psnap = await getDocs(pq);
           setProducts(psnap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -185,7 +185,7 @@ export function ResellerShop() {
 
         <div className="grid grid-cols-2 gap-4">
           {products.length > 0 ? products.map((product, idx) => (
-            <motion.div 
+            <motion.div
               key={product.id}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -196,7 +196,7 @@ export function ResellerShop() {
               <div className="p-4 flex-1 flex flex-col">
                 <h3 className="font-bold text-sm mb-1 line-clamp-2">{product.name}</h3>
                 <p className="text-[#00C9A7] font-black text-lg mb-4">₹{product.price}</p>
-                <button 
+                <button
                   onClick={() => window.open(`${product.productUrl}?ref=${userData.id}`, '_blank')}
                   className="mt-auto w-full bg-[#E8B84B] text-black text-xs font-bold py-2.5 rounded-xl active:scale-95 transition-transform"
                 >
@@ -212,6 +212,70 @@ export function ResellerShop() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- Promotion Celebration Component ---
+export function PromotionCelebration({ level, uid, onClose }: { level: string; uid: string; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+      <div className="bg-[#1A1A1A] border border-gray-800 rounded-3xl p-8 max-w-sm text-center">
+        <h2 className="text-2xl font-black text-[#E8B84B] mb-2">Level Up!</h2>
+        <p className="text-gray-400 mb-4">You've reached {level} level</p>
+        <button onClick={onClose} className="bg-[#E8B84B] text-black font-black py-3 px-8 rounded-xl">
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Mystery Task Popup Component ---
+export function MysteryTaskPopup({ task, onAccept, onClose }: { task: any; onAccept: () => void; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
+      <div className="bg-[#1A1A1A] border border-gray-800 rounded-3xl p-8 max-w-sm">
+        <h2 className="text-2xl font-black text-purple-400 mb-2">Mystery Task!</h2>
+        <p className="text-gray-400 mb-4">{task?.title || 'A mystery task awaits...'}</p>
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 bg-gray-800 text-white font-bold py-3 px-4 rounded-xl">
+            Skip
+          </button>
+          <button onClick={onAccept} className="flex-1 bg-[#E8B84B] text-black font-black py-3 px-4 rounded-xl">
+            Accept
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Leaderboard Tab Component ---
+export function LeaderboardTab({ venture }: { venture: string }) {
+  const [leaders, setLeaders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  return (
+    <div>
+      <h3 className="text-xl font-black mb-4">{venture} Leaderboard</h3>
+      {loading ? (
+        <div className="text-gray-500 text-center py-8">Loading leaderboard...</div>
+      ) : leaders.length === 0 ? (
+        <div className="text-gray-500 text-center py-8">No rankings yet</div>
+      ) : (
+        <div className="space-y-3">
+          {leaders.map((leader, i) => (
+            <div key={leader.id} className="bg-[#111111] border border-gray-800 rounded-2xl p-4 flex items-center gap-4">
+              <span className="text-2xl font-black text-[#E8B84B] w-8">#{i + 1}</span>
+              <div className="flex-1">
+                <p className="font-bold">{leader.name}</p>
+                <p className="text-xs text-gray-500">₹{leader.earned || 0}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -234,14 +298,14 @@ export function TeamChat({ leadId, leadName }: { leadId: string, leadName: strin
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim() || !auth.currentUser) return;
-    
+
     const msg = {
       senderId: auth.currentUser.uid,
       senderName: auth.currentUser.displayName || 'Anonymous',
       text: newMessage,
       timestamp: serverTimestamp()
     };
-    
+
     setNewMessage('');
     await addDoc(collection(db, `teamChats/${leadId}/messages`), msg);
   };
@@ -269,8 +333,8 @@ export function TeamChat({ leadId, leadName }: { leadId: string, leadName: strin
       </div>
 
       <form onSubmit={handleSend} className="p-4 bg-[#111111] border-t border-gray-800 flex gap-2">
-        <input 
-          type="text" 
+        <input
+          type="text"
           value={newMessage}
           onChange={(e) => setNewMessage(e.target.value)}
           placeholder="Type a message..."

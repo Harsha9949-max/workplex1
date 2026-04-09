@@ -36,7 +36,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { UserData, OperationType, handleFirestoreError } from '../types';
+import { UserData, OperationType, handleFirestoreError, Transaction, Withdrawal } from '../types';
 
 interface WalletCardProps {
   label: string;
@@ -349,8 +349,8 @@ export default function WalletScreen({ userData }: WalletScreenProps) {
                   key={tab}
                   onClick={() => setActiveWithdrawTab(tab)}
                   className={`py-2.5 rounded-xl text-xs font-bold transition-all ${activeWithdrawTab === tab
-                      ? 'bg-[#E8B84B] text-black'
-                      : 'text-gray-500 hover:text-gray-300'
+                    ? 'bg-[#E8B84B] text-black'
+                    : 'text-gray-500 hover:text-gray-300'
                     }`}
                 >
                   {tab === 'normal' ? 'To My UPI' : 'Family Transfer'}
@@ -519,8 +519,8 @@ export default function WalletScreen({ userData }: WalletScreenProps) {
                 key={filter}
                 onClick={() => setTransactionFilter(filter)}
                 className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${transactionFilter === filter
-                    ? 'bg-[#E8B84B] text-black'
-                    : 'bg-gray-800 text-gray-500 hover:text-gray-300'
+                  ? 'bg-[#E8B84B] text-black'
+                  : 'bg-gray-800 text-gray-500 hover:text-gray-300'
                   }`}
               >
                 {filter === 'all' ? 'All' : filter === 'credit' ? 'Income' : 'Expense'}
