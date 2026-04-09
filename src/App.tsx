@@ -326,7 +326,6 @@ function MainApp() {
   const [isNewUser, setIsNewUser] = useState(false);
   const [phoneAuthStep, setPhoneAuthStep] = useState<'number' | 'otp'>('number');
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [mockOtp, setMockOtp] = useState<string | null>(null);
   const recaptchaRef = useRef<HTMLDivElement>(null);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
   const navigate = useNavigate();
@@ -423,46 +422,11 @@ function MainApp() {
         return;
       }
 
-      // Generate mock OTP for development
-      const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
-      setMockOtp(generatedOtp);
+      console.log('Sending OTP to:', formattedPhone);
 
-      console.log('📱 Mock OTP for', formattedPhone, ':', generatedOtp);
-
-      // Skip actual Firebase call, go directly to OTP step
-      setConfirmationResult({
-        verificationId: 'mock-verification-id',
-        confirm: async (otp: string) => {
-          if (otp === generatedOtp) {
-            // Mock successful auth - create a fake user
-            const mockUser = {
-              uid: `phone_${Date.now()}`,
-              phoneNumber: formattedPhone,
-              email: null,
-              displayName: null,
-              photoURL: null,
-              emailVerified: false,
-              isAnonymous: false,
-              metadata: {},
-              providerId: 'phone',
-              providerData: [],
-              delete: async () => { },
-              reload: async () => { },
-              toJSON: () => ({}),
-            } as any;
-
-            // Sign in with custom token or mock
-            await import('firebase/auth').then(({ signInWithCustomToken }) => {
-              // For mock, we'll use a workaround
-            });
-
-            return { user: mockUser };
-          } else {
-            throw new Error('Invalid OTP');
-          }
-        }
-      } as any);
-
+      const result = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
+      console.log('OTP sent successfully');
+      setConfirmationResult(result);
       setPhoneAuthStep('otp');
     } catch (err: any) {
       console.error('Phone sign-in error:', err);
@@ -484,44 +448,11 @@ function MainApp() {
   const verifyOtp = async (otp: string) => {
     try {
       setError(null);
-
-      // Check against mock OTP if in development mode
-      if (mockOtp && otp === mockOtp) {
-        // Mock successful authentication for development
-        console.log('✅ Mock OTP verified successfully');
-
-        // Create a mock phone auth credential and sign in
-        const phoneCredential = {
-          providerId: 'phone',
-          signInMethod: 'phone',
-        };
-
-        // Since we can't actually sign in with mock data in Firebase,
-        // we'll create a test user document directly
-        const testUserId = `test_${Date.now()}`;
-
-        // For now, just show a success message
-        // In production, this would use the actual Firebase confirmation
-        console.log('Mock auth would create user:', testUserId);
-
-        // Clear mock OTP
-        setMockOtp(null);
-        setConfirmationResult(null);
-
-        return;
-      }
-
-      // Real Firebase OTP verification
       if (confirmationResult) {
         await confirmationResult.confirm(otp);
       }
     } catch (err: any) {
-      console.error('OTP verification error:', err);
-      if (err.message === 'Invalid OTP' || err.code === 'auth/invalid-verification-code') {
-        setError('Invalid OTP. Please check and try again.');
-      } else {
-        setError(err.message || 'Verification failed. Please try again.');
-      }
+      setError('Invalid OTP. Please try again.');
     }
   };
 
@@ -604,7 +535,6 @@ function MainApp() {
           verifyOtp={verifyOtp}
           setPhoneAuthStep={setPhoneAuthStep}
           recaptchaRef={recaptchaRef}
-          mockOtp={mockOtp}
         />
       ) : (
         <div className="max-w-2xl mx-auto px-4 py-12">
@@ -1411,7 +1341,7 @@ export function PhoneInput({ onSubmit }: { onSubmit: (phone: string) => void }) 
   );
 }
 
-export function OtpInput({ onSubmit, onBack, mockOtp }: { onSubmit: (otp: string) => void, onBack: () => void, mockOtp?: string | null }) {
+export function OtpInput({ onSubmit, onBack }: { onSubmit: (otp: string) => void, onBack: () => void }) {
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
 
@@ -1426,15 +1356,6 @@ export function OtpInput({ onSubmit, onBack, mockOtp }: { onSubmit: (otp: string
 
   return (
     <div className="space-y-4">
-      {/* Mock OTP Display - Development Only */}
-      {mockOtp && (
-        <div className="bg-[#E8B84B]/10 border border-[#E8B84B]/30 rounded-xl p-4 text-center">
-          <p className="text-[10px] font-bold text-[#E8B84B] uppercase tracking-widest mb-2">Development Mode - OTP</p>
-          <p className="text-4xl font-black text-[#E8B84B] tracking-[0.5em] font-mono">{mockOtp}</p>
-          <p className="text-gray-500 text-xs mt-2">Enter this code below to verify</p>
-        </div>
-      )}
-
       <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Enter OTP</label>
       <input
         type="text"

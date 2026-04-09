@@ -14,8 +14,7 @@ export default function LandingPage({
   handlePhoneSignIn,
   verifyOtp,
   setPhoneAuthStep,
-  recaptchaRef,
-  mockOtp
+  recaptchaRef
 }: any) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -687,14 +686,10 @@ export default function LandingPage({
                     {phoneAuthStep === 'number' ? (
                       <PhoneInput onSubmit={handlePhoneSignIn} />
                     ) : (
-                      <OtpInput
-                        onSubmit={(otp: string) => {
-                          setShowAuthModal(false);
-                          verifyOtp(otp);
-                        }}
-                        onBack={() => setPhoneAuthStep('number')}
-                        mockOtp={mockOtp}
-                      />
+                      <OtpInput onSubmit={(otp: string) => {
+                        setShowAuthModal(false);
+                        verifyOtp(otp);
+                      }} onBack={() => setPhoneAuthStep('number')} />
                     )}
                   </div>
                 </div>
