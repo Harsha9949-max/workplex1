@@ -368,17 +368,31 @@ function MainApp() {
   }, []);
 
   useEffect(() => {
-    if (!recaptchaVerifier && recaptchaRef.current) {
+    if (!recaptchaVerifier && recaptchaRef.current && auth) {
       try {
         const verifier = new RecaptchaVerifier(auth, recaptchaRef.current, {
           size: 'invisible',
+          'expired-callback': () => {
+            console.warn('reCAPTCHA expired, resetting...');
+            setRecaptchaVerifier(null);
+          },
+          'error-callback': (error: any) => {
+            console.error('reCAPTCHA error:', error);
+            setError('reCAPTCHA failed. Please refresh and try again.');
+          }
+        });
+        verifier.render().then((widgetId) => {
+          console.log('reCAPTCHA rendered with widget ID:', widgetId);
+        }).catch((err) => {
+          console.error('reCAPTCHA render failed:', err);
         });
         setRecaptchaVerifier(verifier);
-      } catch (e) {
-        console.error('Recaptcha init failed', e);
+      } catch (e: any) {
+        console.error('Recaptcha init failed:', e);
+        setError('Failed to initialize reCAPTCHA. Please refresh the page.');
       }
     }
-  }, [recaptchaRef.current]);
+  }, [recaptchaRef.current, auth]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -392,22 +406,50 @@ function MainApp() {
   const handlePhoneSignIn = async (phone: string) => {
     try {
       setError(null);
-      if (!recaptchaVerifier) {
-        setError('Recaptcha not ready. Please wait.');
+
+      // Validate phone number format
+      if (!phone || phone.length < 10) {
+        setError('Please enter a valid 10-digit phone number.');
         return;
       }
 
-      const q = query(collection(db, 'users'), where('phone', '==', phone));
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        throw new Error('This phone number is already registered.');
+      // Ensure phone starts with +91
+      const formattedPhone = phone.startsWith('+91') ? phone : `+91${phone.replace(/^0+/, '')}`;
+
+      if (!recaptchaVerifier) {
+        setError('reCAPTCHA not ready. Please wait a moment and try again.');
+        console.error('reCAPTCHA verifier is null');
+        return;
       }
 
-      const result = await signInWithPhoneNumber(auth, phone, recaptchaVerifier);
+      // Clear reCAPTCHA before use
+      try {
+        await recaptchaVerifier.clear();
+      } catch (e) {
+        // Ignore clear errors
+      }
+
+      console.log('Sending OTP to:', formattedPhone);
+
+      const result = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
+      console.log('OTP sent successfully, confirmation result:', result);
       setConfirmationResult(result);
       setPhoneAuthStep('otp');
     } catch (err: any) {
-      setError(err.message);
+      console.error('Phone sign-in error:', err);
+
+      // Provide user-friendly error messages
+      if (err.code === 'auth/invalid-phone-number') {
+        setError('Invalid phone number. Please check and try again.');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many attempts. Please wait a few minutes and try again.');
+      } else if (err.code === 'auth/captcha-check-failed') {
+        setError('reCAPTCHA verification failed. Please refresh and try again.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Phone authentication is not enabled. Please contact support.');
+      } else {
+        setError(err.message || 'Failed to send OTP. Please try again.');
+      }
     }
   };
 
@@ -1247,51 +1289,116 @@ function StepWrapper({ children, title, icon }: { children: React.ReactNode, tit
 
 export function PhoneInput({ onSubmit }: { onSubmit: (phone: string) => void }) {
   const [phone, setPhone] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    // Remove any non-digit characters
+    const cleaned = phone.replace(/\D/g, '');
+
+    if (cleaned.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+
+    // Check if it's a valid Indian number (starts with 6-9)
+    if (!/^[6-9]/.test(cleaned)) {
+      setError('Please enter a valid Indian mobile number');
+      return;
+    }
+
+    setError('');
+    onSubmit(`+91${cleaned}`);
+  };
+
   return (
     <div className="space-y-4">
       <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Phone Number</label>
       <div className="relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">+91</span>
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">+91</span>
         <input
           type="tel"
-          placeholder="Enter mobile number"
+          placeholder="Enter 10-digit mobile number"
           className="w-full bg-black border border-gray-800 rounded-xl py-4 pl-14 pr-4 focus:border-[#E8B84B] outline-none transition-all"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => {
+            // Only allow digits, max 10
+            const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+            setPhone(val);
+            setError('');
+          }}
+          maxLength={10}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') handleSubmit();
+          }}
         />
       </div>
+      {error && (
+        <p className="text-red-400 text-xs font-medium">{error}</p>
+      )}
       <button
-        onClick={() => onSubmit(`+91${phone}`)}
+        onClick={handleSubmit}
         disabled={phone.length !== 10}
-        className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-50 transition-all active:scale-[0.98]"
+        className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] hover:bg-[#d4a843]"
       >
         Send OTP
       </button>
+      <p className="text-gray-600 text-xs text-center">
+        You'll receive a 6-digit verification code via SMS
+      </p>
     </div>
   );
 }
 
 export function OtpInput({ onSubmit, onBack }: { onSubmit: (otp: string) => void, onBack: () => void }) {
   const [otp, setOtp] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = () => {
+    if (otp.length !== 6) {
+      setError('Please enter the complete 6-digit code');
+      return;
+    }
+    setError('');
+    onSubmit(otp);
+  };
+
   return (
     <div className="space-y-4">
       <label className="text-xs font-bold text-gray-500 uppercase tracking-widest">Enter OTP</label>
       <input
         type="text"
-        placeholder="6-digit code"
+        inputMode="numeric"
+        placeholder="••••••"
         maxLength={6}
-        className="w-full bg-black border border-gray-800 rounded-xl py-4 px-4 text-center text-2xl tracking-[1em] focus:border-[#E8B84B] outline-none transition-all"
+        className="w-full bg-black border border-gray-800 rounded-xl py-4 px-4 text-center text-2xl tracking-[1em] focus:border-[#E8B84B] outline-none transition-all font-mono"
         value={otp}
-        onChange={(e) => setOtp(e.target.value)}
+        onChange={(e) => {
+          // Only allow digits
+          const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+          setOtp(val);
+          setError('');
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSubmit();
+        }}
+        autoFocus
       />
+      {error && (
+        <p className="text-red-400 text-xs font-medium">{error}</p>
+      )}
       <button
-        onClick={() => onSubmit(otp)}
+        onClick={handleSubmit}
         disabled={otp.length !== 6}
-        className="w-full bg-[#00C9A7] text-black font-bold py-4 rounded-xl disabled:opacity-50 transition-all active:scale-[0.98]"
+        className="w-full bg-[#00C9A7] text-black font-bold py-4 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] hover:bg-[#00b395]"
       >
-        Verify OTP
+        Verify & Continue
       </button>
-      <button onClick={onBack} className="w-full text-gray-500 text-sm hover:text-white transition-colors">Change Number</button>
+      <button onClick={onBack} className="w-full text-gray-500 text-sm hover:text-white transition-colors py-2">
+        ← Change Phone Number
+      </button>
+      <p className="text-gray-600 text-xs text-center">
+        Didn't receive the code? Check your SMS inbox
+      </p>
     </div>
   );
 }
