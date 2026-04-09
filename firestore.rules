@@ -1,0 +1,180 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == 'hvrsindustriespvtltd@gmail.com' ||
+        (request.auth.token.email != null && exists(/databases/$(database)/documents/subAdmins/$(request.auth.token.email)))
+      );
+    }
+
+    function isMasterAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'hvrsindustriespvtltd@gmail.com';
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['name', 'phone', 'venture', 'role', 'contractSigned', 'joinedAt', 'wallets', 'username']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.phone is string &&
+             data.username is string && data.username.size() >= 5 &&
+             data.age is int && data.age >= 18 &&
+             data.venture in ['BuyRix', 'Vyuma', 'TrendyVerse', 'Growplex'] &&
+             data.contractSigned == true &&
+             data.wallets.pending >= 0 &&
+             data.wallets.earned >= 0;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /aiCache/{cacheKey} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /aiRateLimits/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /aiErrors/{errorId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /admins/{email} {
+      allow read: if isMasterAdmin();
+      allow write: if false;
+    }
+
+    match /subAdmins/{uid} {
+      allow read: if isMasterAdmin() || isOwner(uid);
+      allow write: if isMasterAdmin();
+    }
+
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId) || isAdmin() || (isAuthenticated() == false && request.query.limit <= 1); // Allow public lookup by username (limited)
+      
+      // Update only by owner or admin
+      allow update: if (isOwner(userId) || isAdmin()) && 
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photoURL', 'upiId', 'bankAccount', 'kycDone', 'firstTaskDone', 'todayEarnings', 'monthlyEarnings', 'daysActiveThisMonth', 'streak', 'lastActiveDate', 'badges', 'totalTasksCompleted', 'role', 'level', 'totalEarned', 'activeMonths', 'lastActiveAt', 'showPromotionCelebration', 'status', 'aiTasksGeneratedAt', 'rejectionCount', 'loginFrequency', 'taskCompletionPattern', 'withdrawalPattern', 'ipAddressCount', 'deviceCount', 'city', 'salesHistory', 'username', 'showTotalEarnedPublicly']) &&
+                    isValidUser(request.resource.data);
+      
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /teamChats/{leadId}/messages/{messageId} {
+      allow read: if isAuthenticated() && (isOwner(leadId) || exists(/databases/$(database)/documents/teams/$(leadId)/members/$(request.auth.uid)) || isAdmin());
+      allow create: if isAuthenticated() && (isOwner(leadId) || exists(/databases/$(database)/documents/teams/$(leadId)/members/$(request.auth.uid)) || isAdmin());
+    }
+
+    match /products/{productId} {
+      allow read: if true; // Publicly accessible
+      allow write: if isAdmin() || (isAuthenticated() && request.auth.uid == request.resource.data.resellerId);
+    }
+
+    match /leaderboard/{venture}/weekly/{weekId}/entries/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only Cloud Functions (simulated) or Admin
+    }
+
+    match /mysteryTasks/{taskId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+
+    match /taskSubmissions/{submissionId} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.userId);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+    }
+
+    match /fraudAlerts/{alertId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /coupons/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Only admin can activate/deactivate
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      allow create: if isOwner(userId);
+    }
+
+    match /teams/{leadId}/members/{memberId} {
+      allow read: if isAuthenticated() && (isOwner(leadId) || isOwner(memberId) || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /managerTeams/{managerId}/leads/{leadId} {
+      allow read: if isAuthenticated() && (isOwner(managerId) || isOwner(leadId) || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /couponUsages/{usageId} {
+      // Users can see their own earned commissions
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.ownerId || request.auth.uid == resource.data.buyerId || isAdmin());
+      
+      // Anti-self-use rule: buyer cannot be owner
+      allow create: if isAuthenticated() && 
+                    request.resource.data.buyerId == request.auth.uid &&
+                    request.resource.data.buyerId != request.resource.data.ownerId;
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isAuthenticated();
+      // Only admin can create manual credits
+      allow create: if isAdmin();
+    }
+
+    match /tasks/{userId}/assigned/{taskId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /tasks_global/{taskId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /managerTeams/{managerId} {
+      allow read: if isAdmin() || isOwner(managerId);
+      allow write: if isAdmin();
+    }
+    
+    match /managerTeams/{managerId}/leads/{leadId} {
+      allow read: if isAdmin() || isOwner(managerId) || isOwner(leadId);
+      allow write: if isAdmin();
+    }
+    
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

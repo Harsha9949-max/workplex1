@@ -1,0 +1,243 @@
+/**
+ * WorkPlex — Shared Types & Constants
+ */
+import CryptoJS from 'crypto-js';
+
+// --- Constants ---
+export const AES_SECRET = (import.meta as any).env?.VITE_AES_SECRET || 'fallback-secret';
+export const VENTURES = ['BuyRix', 'Vyuma', 'TrendyVerse', 'Growplex'] as const;
+
+export type Venture = 'BuyRix' | 'Vyuma' | 'TrendyVerse' | 'Growplex';
+
+export type UserRole = 
+  | 'marketer' 
+  | 'content_creator' 
+  | 'reseller' 
+  | 'lead_marketer' 
+  | 'manager' 
+  | 'client_acquirer' 
+  | 'support_agent' 
+  | 'social_promoter'
+  | 'sub_admin'
+  | 'admin';
+
+export const VentureRoleMap: Record<Venture, UserRole[]> = {
+  'BuyRix': ['marketer', 'content_creator', 'reseller', 'lead_marketer', 'manager'],
+  'Vyuma': ['marketer', 'content_creator', 'reseller', 'lead_marketer', 'manager'],
+  'TrendyVerse': ['marketer', 'content_creator', 'reseller', 'lead_marketer', 'manager'],
+  'Growplex': ['reseller', 'client_acquirer', 'support_agent', 'social_promoter']
+};
+
+// --- Interfaces ---
+export interface UserProfile {
+  uid: string;
+  name: string;
+  phone: string;
+  email?: string;
+  photoURL?: string;
+  username: string;
+  age: number;
+  venture: Venture;
+  role: UserRole;
+  upiId: string;
+  bankAccount: string;
+  aadhaar: string; // AES Encrypted
+  pan: string;     // AES Encrypted
+  deviceFingerprint: string;
+  level: 'Bronze' | 'Silver' | 'Gold' | 'Platinum' | 'Legend';
+  streak: number;
+  joinedAt: Timestamp;
+  contractSigned: boolean;
+  kycDone: boolean;
+  firstTaskDone: boolean;
+  onboardingStatus: 'not_started' | 'in_progress' | 'completed';
+  onboardingStep: number;
+  wallets: {
+    earned: number;
+    pending: number;
+    bonus: number;
+    savings: number;
+  };
+  savingsPercent: number;
+  referredBy?: string;
+  lastActiveDate?: Timestamp;
+  badges: string[];
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  instructions: string;
+  venture: Venture;
+  role: UserRole[];
+  earnAmount: number;
+  deadline: Timestamp;
+  proofType: 'image' | 'link' | 'text';
+  proofRequirements: string;
+  assignedTo: string[] | 'all';
+  isCrossVenture: boolean;
+  isMystery: boolean;
+  mysteryWindow?: number; // in hours
+  createdAt: Timestamp;
+}
+
+export interface TaskSubmission {
+  id: string;
+  userId: string;
+  userName: string;
+  taskId: string;
+  taskTitle: string;
+  proofLink: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: any;
+  rejectionReason?: string;
+}
+
+export interface FraudAlert {
+  id: string;
+  userId: string;
+  userName: string;
+  reason: string;
+  flaggedAt: any;
+  status: 'active' | 'dismissed' | 'action_taken';
+}
+
+export interface SubAdmin {
+  id: string;
+  email: string;
+  venture: string;
+  createdAt: any;
+}
+
+// --- Enums ---
+export enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+// --- Utility Functions ---
+export const encrypt = (text: string) => CryptoJS.AES.encrypt(text, AES_SECRET).toString();
+
+export const getDeviceFingerprint = () => {
+  const data = navigator.userAgent + screen.width + screen.height + screen.colorDepth;
+  return CryptoJS.SHA256(data).toString();
+};
+
+export const generateCouponCode = (venture: Venture) => {
+  const prefixes: Record<Venture, string> = {
+    BuyRix: 'BX',
+    Vyuma: 'VY',
+    TrendyVerse: 'TV',
+    Growplex: 'GX'
+  };
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let randomPart = '';
+  for (let i = 0; i < 6; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `${prefixes[venture]}-${randomPart}`;
+};
+
+export const shareOnWhatsApp = (text: string) => {
+  const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
+};
+
+export const calculateCommission = (productPrice: number) => {
+  const margin = productPrice * 0.175;
+  const commission = margin * 0.10;
+  return { margin, commission };
+};
+
+export const getNextLevel = (currentLevel: string): { name: string; min: number } | null => {
+  const levels = [
+    { name: 'Bronze', min: 0 },
+    { name: 'Silver', min: 5000 },
+    { name: 'Gold', min: 25000 },
+    { name: 'Platinum', min: 100000 },
+    { name: 'Legend', min: 500000 }
+  ];
+  const currentIdx = levels.findIndex(l => l.name === currentLevel);
+  return currentIdx < levels.length - 1 ? levels[currentIdx + 1] : null;
+};
+
+export const STREAK_BONUS_AMOUNT = 50;
+export const STREAK_BONUS_INTERVAL = 7;
+export const MIN_WITHDRAWAL = 200;
+export const BONUS_CONVERSION_THRESHOLD = 200;
+export const DAILY_WITHDRAWAL_LIMIT = 50000;
+
+export const BADGE_DEFINITIONS = [
+  { id: 'first_sale', name: 'First Sale', description: 'Completed your first approved task!' },
+  { id: 'streak_7', name: 'Week Warrior', description: 'Maintained a 7-day streak!' },
+  { id: 'coupon_king', name: 'Coupon King', description: 'Used 100+ coupons!' },
+  { id: 'top_earner', name: 'Top Earner', description: 'Reached #1 on weekly leaderboard!' },
+  { id: 'club_10k', name: '10K Club', description: 'Earned over ₹10,000 total!' },
+  { id: 'club_50k', name: '50K Club', description: 'Earned over ₹50,000 total!' },
+  { id: 'team_builder', name: 'Team Builder', description: 'Built a team of 10+ members!' },
+  { id: 'speed_demon', name: 'Speed Demon', description: 'Completed a mystery task within 30 mins!' },
+  { id: 'early_bird', name: 'Early Bird', description: 'One of the first 1,000 users!' },
+  { id: 'venture_master', name: 'Venture Master', description: 'Worked across 2+ ventures!' },
+  { id: 'perfect_month', name: 'Perfect Month', description: 'Completed all tasks for 30 days!' },
+  { id: 'platinum_worker', name: 'Platinum Worker', description: 'Reached Platinum level!' },
+];
+
+// --- Firestore Error Handler ---
+import { auth } from './firebase';
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  };
+  
+  const cache = new Set();
+  const errString = JSON.stringify(errInfo, (key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (cache.has(value)) return '[Circular]';
+      cache.add(value);
+    }
+    return value;
+  });
+
+  console.error('Firestore Error: ', errString);
+  throw new Error(errString);
+}

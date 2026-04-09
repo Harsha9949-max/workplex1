@@ -1,0 +1,343 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A gig worker profile on WorkPlex.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Full name of the user." },
+        "phone": { "type": "string", "description": "Verified phone number." },
+        "photoURL": { "type": "string", "description": "Profile photo URL." },
+        "age": { "type": "integer", "description": "Age of the user (must be >= 18)." },
+        "venture": { "type": "string", "description": "Selected venture (BuyRix, Vyuma, TrendyVerse, Growplex)." },
+        "role": { "type": "string", "description": "Role within the selected venture." },
+        "upiId": { "type": "string", "description": "UPI ID for payments." },
+        "bankAccount": { "type": "string", "description": "Bank account number." },
+        "aadhaar": { "type": "string", "description": "AES encrypted Aadhaar number." },
+        "pan": { "type": "string", "description": "AES encrypted PAN number." },
+        "deviceFingerprint": { "type": "string", "description": "Hash of user agent and screen dimensions." },
+        "level": { "type": "string", "enum": ["Bronze", "Silver", "Gold", "Platinum"], "description": "User's current level." },
+        "streak": { "type": "integer", "description": "Current daily streak." },
+        "lastActiveDate": { "type": "string", "description": "Last date user completed a task (YYYY-MM-DD)." },
+        "badges": { "type": "array", "items": { "type": "string" }, "description": "Earned badge IDs." },
+        "totalTasksCompleted": { "type": "integer", "description": "Total number of approved tasks." },
+        "contractSigned": { "type": "boolean", "description": "Whether the contractor agreement is signed." },
+        "joinedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the user joined." },
+        "wallets": {
+          "type": "object",
+          "properties": {
+            "earned": { "type": "number" },
+            "pending": { "type": "number" },
+            "bonus": { "type": "number" },
+            "savings": { "type": "number" }
+          }
+        },
+        "kycDone": { "type": "boolean" },
+        "firstTaskDone": { "type": "boolean" },
+        "todayEarnings": { "type": "number" },
+        "monthlyEarnings": { "type": "number" },
+        "daysActiveThisMonth": { "type": "number" },
+        "activeMonths": { "type": "number" },
+        "totalEarned": { "type": "number" },
+        "referredBy": { "type": "string" },
+        "lastActiveAt": { "type": "string", "format": "date-time" },
+        "showPromotionCelebration": { "type": "boolean" },
+        "aiTasksGeneratedAt": { "type": "string", "format": "date-time" },
+        "rejectionCount": { "type": "integer" },
+        "loginFrequency": { "type": "integer" },
+        "taskCompletionPattern": { "type": "array", "items": { "type": "string" } },
+        "withdrawalPattern": { "type": "array", "items": { "type": "string" } },
+        "ipAddressCount": { "type": "integer" },
+        "deviceCount": { "type": "integer" },
+        "city": { "type": "string" },
+        "salesHistory": { "type": "array", "items": { "type": "string" } },
+        "username": { "type": "string", "description": "Auto-generated unique username." },
+        "showTotalEarnedPublicly": { "type": "boolean", "default": true }
+      },
+      "required": ["name", "phone", "venture", "role", "contractSigned", "username"]
+    },
+    "TeamChatMessage": {
+      "title": "TeamChatMessage",
+      "description": "Message in a team chat.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "senderName", "text", "timestamp"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Product listed in a reseller's catalog.",
+      "type": "object",
+      "properties": {
+        "resellerId": { "type": "string" },
+        "resellerUsername": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "image": { "type": "string" },
+        "venture": { "type": "string" },
+        "productUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["resellerId", "resellerUsername", "name", "price", "image", "venture", "productUrl", "createdAt"]
+    },
+    "AICache": {
+      "title": "AICache",
+      "description": "Cached AI responses with TTL.",
+      "type": "object",
+      "properties": {
+        "result": { "type": "object" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AIRateLimit": {
+      "title": "AIRateLimit",
+      "description": "Tracks last AI call per user.",
+      "type": "object",
+      "properties": {
+        "lastCall": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AIError": {
+      "title": "AIError",
+      "description": "Logs of AI service failures.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "error": { "type": "object" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "context": { "type": "string" }
+      }
+    },
+    "TeamMember": {
+      "title": "Team Member",
+      "description": "Mapping of team members to their leads",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Coupon": {
+      "title": "Coupon",
+      "description": "User's unique coupon code data.",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "venture": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "usageCount": { "type": "integer" },
+        "totalEarned": { "type": "number" }
+      },
+      "required": ["code", "venture", "ownerId", "isActive"]
+    },
+    "CouponUsage": {
+      "title": "CouponUsage",
+      "description": "Record of a coupon being used at checkout.",
+      "type": "object",
+      "properties": {
+        "couponCode": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "buyerId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productPrice": { "type": "number" },
+        "margin": { "type": "number" },
+        "commissionAmount": { "type": "number" },
+        "usedAt": { "type": "string", "format": "date-time" },
+        "released": { "type": "boolean" }
+      },
+      "required": ["couponCode", "ownerId", "buyerId", "productPrice", "commissionAmount", "usedAt", "released"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Wallet transaction record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["commission_release", "coupon_manual_credit", "task_earning", "bonus"] },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "amount", "type", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A gig task assigned to a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "earning": { "type": "number" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["assigned", "accepted", "completed", "skipped"] }
+      }
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Admin announcements for all users.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "audience": { "type": "string", "enum": ["all", "venture", "role"] },
+        "target": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "Worker withdrawal request.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "amount": { "type": "number" },
+        "upiId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "requestedAt": { "type": "string", "format": "date-time" },
+        "processedAt": { "type": "string", "format": "date-time" },
+        "rejectionReason": { "type": "string" }
+      }
+    },
+    "TaskSubmission": {
+      "title": "TaskSubmission",
+      "description": "Worker task submission for approval.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskTitle": { "type": "string" },
+        "proofLink": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "submittedAt": { "type": "string", "format": "date-time" },
+        "rejectionReason": { "type": "string" }
+      }
+    },
+    "FraudAlert": {
+      "title": "FraudAlert",
+      "description": "Flagged suspicious activity.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "reason": { "type": "string" },
+        "flaggedAt": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "dismissed", "action_taken"] }
+      }
+    },
+    "SubAdmin": {
+      "title": "SubAdmin",
+      "description": "Restricted admin account.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "venture": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Weekly earnings record for leaderboard.",
+      "type": "object",
+      "properties": {
+        "userName": { "type": "string" },
+        "venture": { "type": "string" },
+        "earnedThisWeek": { "type": "number" },
+        "rank": { "type": "integer" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "MysteryTask": {
+      "title": "MysteryTask",
+      "description": "Random high-earning task with countdown.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "earning": { "type": "number" },
+        "isMystery": { "type": "boolean" },
+        "mysteryWindow": { "type": "integer", "description": "Hours to accept." },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/coupons/{uid}": {
+      "schema": "Coupon",
+      "description": "User's unique coupon."
+    },
+    "/tasks/{uid}/assigned/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks assigned to a specific user."
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Global announcements."
+    },
+    "/teams/{leadId}/members/{memberId}": {
+      "schema": "TeamMember",
+      "description": "Lead Marketer's team members"
+    },
+    "/managerTeams/{managerId}/leads/{leadId}": {
+      "schema": "TeamMember",
+      "description": "Manager's lead marketers"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Withdrawal requests."
+    },
+    "/taskSubmissions/{submissionId}": {
+      "schema": "TaskSubmission",
+      "description": "Task submissions for approval."
+    },
+    "/fraudAlerts/{alertId}": {
+      "schema": "FraudAlert",
+      "description": "Suspicious activity alerts."
+    },
+    "/subAdmins/{uid}": {
+      "schema": "SubAdmin",
+      "description": "Sub-admin accounts."
+    },
+    "/admins/{email}": {
+      "schema": "User",
+      "description": "Admin accounts (email-based mapping)."
+    },
+    "/leaderboard/{venture}/weekly/{weekId}/entries/{userId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Weekly leaderboard entries."
+    },
+    "/mysteryTasks/{taskId}": {
+      "schema": "MysteryTask",
+      "description": "Active mystery tasks."
+    },
+    "/aiCache/{cacheKey}": {
+      "schema": "AICache",
+      "description": "Cached AI responses."
+    },
+    "/aiRateLimits/{uid}": {
+      "schema": "AIRateLimit",
+      "description": "AI rate limiting data."
+    },
+    "/aiErrors/{errorId}": {
+      "schema": "AIError",
+      "description": "AI error logs."
+    },
+    "/teamChats/{leadId}/messages/{messageId}": {
+      "schema": "TeamChatMessage",
+      "description": "Team chat messages."
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Reseller products."
+    }
+  }
+}
