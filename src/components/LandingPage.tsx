@@ -14,7 +14,8 @@ export default function LandingPage({
   handlePhoneSignIn,
   verifyOtp,
   setPhoneAuthStep,
-  recaptchaRef
+  recaptchaRef,
+  mockOtp
 }: any) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -68,8 +69,8 @@ export default function LandingPage({
       {/* Navbar */}
       <motion.nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled
-            ? 'bg-[#0A0A0A]/90 backdrop-blur-xl border-b border-white/5 shadow-lg'
-            : 'bg-transparent'
+          ? 'bg-[#0A0A0A]/90 backdrop-blur-xl border-b border-white/5 shadow-lg'
+          : 'bg-transparent'
           }`}
         initial={{ y: -100 }}
         animate={{ y: 0 }}
@@ -686,10 +687,14 @@ export default function LandingPage({
                     {phoneAuthStep === 'number' ? (
                       <PhoneInput onSubmit={handlePhoneSignIn} />
                     ) : (
-                      <OtpInput onSubmit={(otp: string) => {
-                        setShowAuthModal(false);
-                        verifyOtp(otp);
-                      }} onBack={() => setPhoneAuthStep('number')} />
+                      <OtpInput
+                        onSubmit={(otp: string) => {
+                          setShowAuthModal(false);
+                          verifyOtp(otp);
+                        }}
+                        onBack={() => setPhoneAuthStep('number')}
+                        mockOtp={mockOtp}
+                      />
                     )}
                   </div>
                 </div>
