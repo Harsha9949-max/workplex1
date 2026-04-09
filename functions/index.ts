@@ -13,7 +13,7 @@ const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 async function callDeepSeek(uid: string, prompt: string, cacheKey: string, ttlSeconds: number, systemInstruction?: string) {
   const now = Date.now();
   const cacheRef = db.collection('aiCache').doc(cacheKey);
-  
+
   // 1. Check Cache
   const cacheSnap = await cacheRef.get();
   if (cacheSnap.exists) {
@@ -106,15 +106,15 @@ export const aiTaskGenerator = functions.pubsub.schedule('0 6 * * *')
         .orderBy('submittedAt', 'desc')
         .limit(10)
         .get();
-      
+
       const completedTaskTypes = recentSubmissions.docs.map(d => d.data().taskTitle);
-      const completionRate = userData.totalTasksCompleted ? (userData.totalTasksCompleted / (userData.totalTasksCompleted + (userData.tasksSkipped || 0))) * 100 : 0;
+      const _completionRate = userData.totalTasksCompleted ? (userData.totalTasksCompleted / (userData.totalTasksCompleted + (userData.tasksSkipped || 0))) * 100 : 0;
 
       const prompt = `Generate 3 marketing tasks for a ${userData.role} at ${userData.venture}. Their recent tasks: ${completedTaskTypes.join(', ')}. Make tasks specific, actionable, different from recent ones. Return JSON array: {"tasks": [{"title", "description", "proofType", "earnAmount", "difficulty"}]}`;
 
       try {
         const result = await callDeepSeek(uid, prompt, `tasks_${uid}`, 21600, 'You are an expert task generator for a gig platform.');
-        
+
         const batch = db.batch();
         result.tasks.forEach((task: any) => {
           const taskRef = db.collection('tasks').doc(uid).collection('assigned').doc();
@@ -126,11 +126,11 @@ export const aiTaskGenerator = functions.pubsub.schedule('0 6 * * *')
             isAI: true
           });
         });
-        
+
         batch.update(db.collection('users').doc(uid), {
           aiTasksGeneratedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        
+
         await batch.commit();
       } catch (e) {
         console.error(`Failed to generate tasks for ${uid}:`, e);
@@ -152,7 +152,7 @@ export const aiEarningsPredictor = functions.https.onCall(async (data, context) 
   const pendingTasksSnap = await db.collection('tasks').doc(uid).collection('assigned')
     .where('status', '==', 'assigned')
     .get();
-  
+
   const pendingTaskCount = pendingTasksSnap.size;
   const averageTaskEarning = userData.totalEarned / (userData.totalTasksCompleted || 1);
   const completionRate = userData.totalTasksCompleted ? (userData.totalTasksCompleted / (userData.totalTasksCompleted + (userData.tasksSkipped || 0))) * 100 : 0;
@@ -293,12 +293,12 @@ export const dailyStreakUpdate = functions.pubsub.schedule('0 0 * * *')
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
     const usersSnap = await db.collection('users').get();
-    const batch = db.batch();
+    const _batch = db.batch();
 
     usersSnap.forEach(doc => {
       const userData = doc.data();
       const lastActiveDate = userData.lastActiveDate || '';
-      let currentStreak = userData.streak || 0;
+      const _currentStreak = userData.streak || 0;
 
       if (lastActiveDate === yesterdayStr) {
         // User was active yesterday, streak continues if they complete a task today
@@ -363,7 +363,7 @@ export const aggregateLeaderboard = functions.pubsub.schedule('0 * * * *')
       entries.sort((a, b) => b.earnedThisWeek - a.earnedThisWeek);
 
       const top10 = entries.slice(0, 10);
-      
+
       const batch = db.batch();
       top10.forEach((entry, index) => {
         const ref = db.collection('leaderboard').doc(venture)
