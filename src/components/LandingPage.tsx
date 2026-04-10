@@ -63,8 +63,7 @@ export default function LandingPage({
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
       {/* ===== NAVBAR ===== */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-[#0A0A0A] border-b border-gray-800' : 'bg-[#0A0A0A]'
-        }`}>
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-[#0A0A0A]/95 backdrop-blur-xl border-b border-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
@@ -141,19 +140,19 @@ export default function LandingPage({
       </nav>
 
       {/* ===== HERO SECTION ===== */}
-      <section className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
+      <section className="pt-28 sm:pt-32 pb-16 sm:pb-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
             {/* Left: Text Content */}
             <div className="text-center lg:text-left">
               {/* Badge */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8B84B]/10 border border-[#E8B84B]/20 rounded-full mb-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8B84B]/10 border border-[#E8B84B]/20 rounded-full mb-4 sm:mb-6">
                 <Sparkles className="w-4 h-4 text-[#E8B84B]" />
                 <span className="text-sm font-medium">By HVRS Innovations</span>
               </div>
 
               {/* Heading */}
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6">
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black mb-4 sm:mb-6" style={{ lineHeight: '1.15' }}>
                 Earn From{' '}
                 <span className="bg-gradient-to-r from-[#E8B84B] to-[#00C9A7] bg-clip-text text-transparent">
                   Anywhere
@@ -163,38 +162,38 @@ export default function LandingPage({
               </h1>
 
               {/* Description */}
-              <p className="text-lg text-gray-400 mb-8 max-w-2xl mx-auto lg:mx-0">
+              <p className="text-base sm:text-lg text-gray-400 mb-6 sm:mb-8 max-w-2xl mx-auto lg:mx-0">
                 Join a growing community of professionals earning through our AI-powered gig platform. Complete tasks, build teams, and grow your income on your own terms.
               </p>
 
               {/* CTA Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-8">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start mb-6 sm:mb-8">
                 <button
                   onClick={() => setShowAuthModal(true)}
-                  className="bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 hover:scale-105 transition-transform"
+                  className="bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black px-6 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-2 hover:scale-105 transition-transform"
                 >
                   <Rocket className="w-5 h-5" />
                   Get Started
                   <ChevronRight className="w-5 h-5" />
                 </button>
-                <button className="bg-white/5 border border-white/10 px-8 py-4 rounded-2xl font-bold text-lg hover:bg-white/10 transition-colors">
+                <button className="bg-white/5 border border-white/10 px-6 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold text-base sm:text-lg hover:bg-white/10 transition-colors">
                   Learn More
                 </button>
               </div>
 
               {/* Features Badges */}
-              <div className="flex flex-wrap items-center gap-6 justify-center lg:justify-start">
+              <div className="flex flex-wrap items-center gap-4 sm:gap-6 justify-center lg:justify-start">
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-[#00C9A7]" />
-                  <span className="text-sm text-gray-400">Free to Join</span>
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-[#00C9A7]" />
+                  <span className="text-xs sm:text-sm text-gray-400">Free to Join</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-[#00C9A7]" />
-                  <span className="text-sm text-gray-400">Fast Payouts</span>
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-[#00C9A7]" />
+                  <span className="text-xs sm:text-sm text-gray-400">Fast Payouts</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-[#00C9A7]" />
-                  <span className="text-sm text-gray-400">24/7 Support</span>
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-[#00C9A7]" />
+                  <span className="text-xs sm:text-sm text-gray-400">24/7 Support</span>
                 </div>
               </div>
             </div>
@@ -238,20 +237,20 @@ export default function LandingPage({
       </section>
 
       {/* ===== STATS SECTION ===== */}
-      <section className="py-12 border-y border-gray-800 bg-[#111111]">
+      <section className="py-10 sm:py-12 border-y border-gray-800 bg-[#111111]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             {[
               { label: 'Secure Payouts', icon: Wallet, color: '#E8B84B' },
               { label: 'Growing Community', icon: Users, color: '#FFFFFF' },
               { label: 'Protected Data', icon: ShieldCheck, color: '#00C9A7' },
               { label: 'Positive Feedback', icon: Star, color: '#E8B84B' }
             ].map((stat, i) => (
-              <div key={i} className="text-center">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ backgroundColor: `${stat.color}10` }}>
-                  <stat.icon className="w-6 h-6" style={{ color: stat.color }} />
+              <div key={i} className="flex flex-col items-center justify-center text-center">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 mb-2 sm:mb-3 rounded-xl flex items-center justify-center" style={{ backgroundColor: `${stat.color}10` }}>
+                  <stat.icon className="w-5 h-5 sm:w-6 sm:h-6" style={{ color: stat.color }} />
                 </div>
-                <p className="text-lg font-black" style={{ color: stat.color }}>{stat.label}</p>
+                <p className="text-sm sm:text-base lg:text-lg font-black" style={{ color: stat.color }}>{stat.label}</p>
               </div>
             ))}
           </div>
@@ -259,22 +258,22 @@ export default function LandingPage({
       </section>
 
       {/* ===== FEATURES SECTION ===== */}
-      <section id="features" className="py-20 px-4 sm:px-6 lg:px-8">
+      <section id="features" className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Section Header */}
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8B84B]/10 border border-[#E8B84B]/20 rounded-full mb-4">
+          <div className="text-center mb-10 sm:mb-12 lg:mb-16">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#E8B84B]/10 border border-[#E8B84B]/20 rounded-full mb-3 sm:mb-4">
               <Zap className="w-4 h-4 text-[#E8B84B]" />
               <span className="text-sm font-medium">Powerful Features</span>
             </div>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black mb-4">Why Choose WorkPlex?</h2>
-            <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl xl:text-5xl font-black mb-3 sm:mb-4">Why Choose WorkPlex?</h2>
+            <p className="text-gray-400 text-sm sm:text-base lg:text-lg max-w-2xl mx-auto">
               Everything you need to succeed in the gig economy, all in one platform.
             </p>
           </div>
 
           {/* Features Grid */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {[
               { icon: Wallet, title: 'Convenient Withdrawals', desc: 'Request payouts directly to your UPI or bank account with quick processing.', color: '#00C9A7' },
               { icon: BarChart3, title: 'Smart Task Matching', desc: 'Receive task suggestions based on your skills, location, and activity history.', color: '#E8B84B' },
@@ -285,13 +284,13 @@ export default function LandingPage({
             ].map((feature, i) => (
               <div
                 key={i}
-                className="bg-gradient-to-br from-white/5 to-transparent p-6 sm:p-8 rounded-3xl border border-white/5 hover:border-[#E8B84B]/30 transition-all"
+                className="bg-gradient-to-br from-white/5 to-transparent p-5 sm:p-6 lg:p-8 rounded-2xl sm:rounded-3xl border border-white/5 hover:border-[#E8B84B]/30 transition-all"
               >
-                <div className="w-14 h-14 mb-6 rounded-2xl flex items-center justify-center" style={{ backgroundColor: `${feature.color}10` }}>
-                  <feature.icon className="w-7 h-7" style={{ color: feature.color }} />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 mb-3 sm:mb-4 lg:mb-6 rounded-xl sm:rounded-2xl flex items-center justify-center" style={{ backgroundColor: `${feature.color}10` }}>
+                  <feature.icon className="w-5 h-5 sm:w-6 sm:h-6 lg:w-7 lg:h-7" style={{ color: feature.color }} />
                 </div>
-                <h3 className="text-xl font-bold mb-3">{feature.title}</h3>
-                <p className="text-gray-400">{feature.desc}</p>
+                <h3 className="text-base sm:text-lg lg:text-xl font-bold mb-2 sm:mb-3">{feature.title}</h3>
+                <p className="text-xs sm:text-sm lg:text-base text-gray-400">{feature.desc}</p>
               </div>
             ))}
           </div>
