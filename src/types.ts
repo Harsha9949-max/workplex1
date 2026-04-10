@@ -432,54 +432,23 @@ export const BADGE_DEFINITIONS = [
 // --- Firestore Error Handler ---
 import { auth } from './firebase';
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  };
+  const errorMessage = error instanceof Error ? error.message : String(error);
 
-  const cache = new Set();
-  const errString = JSON.stringify(errInfo, (key, value) => {
-    if (typeof value === 'object' && value !== null) {
-      if (cache.has(value)) return '[Circular]';
-      cache.add(value);
-    }
-    return value;
-  });
+  // Log error with context
+  console.error(`Firestore Error [${operationType}] at ${path}:`, errorMessage);
 
-  console.error('Firestore Error: ', errString);
-  throw new Error(errString);
+  // Log auth state for debugging
+  if (auth.currentUser) {
+    console.error('Auth state:', {
+      userId: auth.currentUser.uid,
+      email: auth.currentUser.email,
+      emailVerified: auth.currentUser.emailVerified
+    });
+  } else {
+    console.error('No authenticated user');
+  }
+
+  // Don't throw - just log. This prevents crashes in snapshot listeners.
+  return null;
 }
