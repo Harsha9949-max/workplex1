@@ -1,26 +1,80 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0A0A0A" />
-    <meta name="description" content="WorkPlex - Earn from anywhere. Join the ultimate gig-worker platform." />
-    
-    <!-- Open Graph for Social Sharing -->
-    <meta property="og:title" content="WorkPlex — Earn From Anywhere" />
-    <meta property="og:description" content="Join the ultimate gig-worker platform and earn commissions." />
-    <meta property="og:type" content="website" />
-    
-    <!-- Google Fonts: Inter -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    
-    <title>WorkPlex — Earn From Anywhere | HVRS Innovations</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
 
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0A0A0A" />
+  <meta name="description" content="WorkPlex - Earn from anywhere. Join the ultimate gig-worker platform." />
+
+  <!-- Open Graph for Social Sharing -->
+  <meta property="og:title" content="WorkPlex — Earn From Anywhere" />
+  <meta property="og:description" content="Join the ultimate gig-worker platform and earn commissions." />
+  <meta property="og:type" content="website" />
+
+  <!-- Preconnect to external resources -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://firebase.googleapis.com">
+
+  <!-- Preload critical resources -->
+  <link rel="preload"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" as="style">
+
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+
+  <title>WorkPlex — Earn From Anywhere | HVRS Innovations</title>
+
+  <!-- Critical CSS inline -->
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box
+    }
+
+    body {
+      background: #0A0A0A;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif
+    }
+
+    #root {
+      min-height: 100vh
+    }
+
+    .loading-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh
+    }
+
+    .loading-spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid #1A1A1A;
+      border-top-color: #E8B84B;
+      border-radius: 50%;
+      animation: spin 1s linear infinite
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg)
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div class="loading-screen">
+      <div class="loading-spinner"></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+
+</html>

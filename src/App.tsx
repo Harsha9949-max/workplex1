@@ -375,8 +375,9 @@ function MainApp() {
 
   useEffect(() => {
     if (!recaptchaVerifier && recaptchaRef.current && auth) {
+      let verifier: RecaptchaVerifier | null = null;
       try {
-        const verifier = new RecaptchaVerifier(auth, recaptchaRef.current, {
+        verifier = new RecaptchaVerifier(auth, recaptchaRef.current, {
           size: 'invisible',
           'expired-callback': () => {
             console.warn('reCAPTCHA expired, resetting...');
@@ -385,20 +386,40 @@ function MainApp() {
           'error-callback': (error: any) => {
             console.error('reCAPTCHA error:', error);
             setError('reCAPTCHA failed. Please refresh and try again.');
+            setRecaptchaVerifier(null);
           }
         });
+
         verifier.render().then((widgetId) => {
           console.log('reCAPTCHA rendered with widget ID:', widgetId);
+          setRecaptchaVerifier(verifier);
         }).catch((err) => {
           console.error('reCAPTCHA render failed:', err);
+          setError('Failed to render reCAPTCHA. Please refresh the page.');
+          setRecaptchaVerifier(null);
         });
-        setRecaptchaVerifier(verifier);
       } catch (e: any) {
         console.error('Recaptcha init failed:', e);
         setError('Failed to initialize reCAPTCHA. Please refresh the page.');
+        setRecaptchaVerifier(null);
       }
+
+      // Cleanup on unmount
+      return () => {
+        if (verifier) {
+          try {
+            // Clear any existing recaptcha
+            const container = document.getElementById('recaptcha-container');
+            if (container) {
+              container.innerHTML = '';
+            }
+          } catch (e) {
+            console.warn('Error clearing recaptcha:', e);
+          }
+        }
+      };
     }
-  }, [recaptchaRef.current, auth]);
+  }, [recaptchaVerifier, auth]);
 
   const handleGoogleSignIn = async () => {
     try {
@@ -711,15 +732,18 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
     const q = query(collection(db, 'transactions'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'), limit(10));
     const unsub = onSnapshot(q, (snap) => {
       const txs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      if (recentTransactions.length > 0 && txs.length > recentTransactions.length) {
-        const newTx: any = txs[0];
-        setToast({ amount: newTx.amount, source: newTx.description });
-        setTimeout(() => setToast(null), 4000);
-      }
-      setRecentTransactions(txs);
+      setRecentTransactions((prev) => {
+        // Only show toast if there's a new transaction
+        if (prev.length > 0 && txs.length > prev.length) {
+          const newTx: any = txs[0];
+          setToast({ amount: newTx.amount, source: newTx.description });
+          setTimeout(() => setToast(null), 4000);
+        }
+        return txs;
+      });
     }, (err) => handleFirestoreError(err, OperationType.LIST, 'transactions'));
     return () => unsub();
-  }, [user.uid, recentTransactions.length]);
+  }, [user.uid]);
 
   useEffect(() => {
     const q = query(collection(db, 'transactions'), orderBy('createdAt', 'desc'), limit(10));
@@ -730,7 +754,7 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
   }, []);
 
   useEffect(() => {
-    const fetchAIPrediction = async () => {
+    const fetchAIPrediction = () => {
       const pendingCount = tasks.filter(t => t.status === 'assigned').length;
       const avgEarning = tasks.reduce((a, b) => a + b.earning, 0) / (tasks.length || 1);
       setAiPrediction({
@@ -742,18 +766,15 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
   }, [user.uid, tasks]);
 
   useEffect(() => {
-    const fetchAIRecommendations = async () => {
-      if (userData?.role !== 'Reseller') return;
-      setIsAiLoading(true);
+    if (!userData || userData.role !== 'Reseller') return;
+    setIsAiLoading(true);
+    // Simulate AI processing
+    const timer = setTimeout(() => {
       setAiRecommendations(['Electronics', 'Fashion', 'Home Decor', 'Beauty', 'Sports']);
       setIsAiLoading(false);
-    };
-    if (userData?.role === 'Reseller') fetchAIRecommendations();
-  }, [userData?.role, user.uid]);
-
-  useEffect(() => {
-    updateDoc(doc(db, 'users', user.uid), { lastActiveAt: serverTimestamp() });
-  }, [user.uid]);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [userData?.role]);
 
   useEffect(() => {
     if (userData?.role === 'Lead Marketer' || userData?.role === 'Manager') {
@@ -763,6 +784,11 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
       return () => unsubTeam();
     }
   }, [userData?.role, user.uid]);
+
+  // Update lastActiveAt only once on mount
+  useEffect(() => {
+    updateDoc(doc(db, 'users', user.uid), { lastActiveAt: serverTimestamp() });
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);

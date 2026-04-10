@@ -25,14 +25,14 @@ interface NavButtonProps {
   badge?: number;
 }
 
-export function NavButton({ active, icon, label, onClick, direction, badge }: NavButtonProps) {
+export const NavButton = React.memo(({ active, icon, label, onClick, direction, badge }: NavButtonProps) => {
   const isHorizontal = direction === 'horizontal';
   return (
     <button
       onClick={onClick}
       className={`relative flex items-center gap-2 transition-all duration-200 ${isHorizontal
-          ? 'flex-row w-full px-4 py-3 rounded-xl'
-          : 'flex-col gap-1 p-2'
+        ? 'flex-row w-full px-4 py-3 rounded-xl'
+        : 'flex-col gap-1 p-2'
         }`}
     >
       {active && (
@@ -62,7 +62,7 @@ export function NavButton({ active, icon, label, onClick, direction, badge }: Na
       </span>
     </button>
   );
-}
+});
 
 interface NavigationProps {
   activeTab: string;
@@ -71,7 +71,7 @@ interface NavigationProps {
   notifications?: number;
 }
 
-export function DesktopSidebar({ activeTab, setActiveTab, userData, notifications = 0 }: NavigationProps) {
+export const DesktopSidebar = React.memo(({ activeTab, setActiveTab, userData, notifications = 0 }: NavigationProps) => {
   return (
     <div className="hidden md:flex flex-col fixed top-0 left-0 w-72 h-full bg-[#0F0F0F] border-r border-gray-800/50 p-6 z-50">
       {/* Logo */}
@@ -155,9 +155,9 @@ export function DesktopSidebar({ activeTab, setActiveTab, userData, notification
       </button>
     </div>
   );
-}
+});
 
-export function MobileBottomNav({ activeTab, setActiveTab, userData, notifications = 0 }: NavigationProps) {
+export const MobileBottomNav = React.memo(({ activeTab, setActiveTab, userData, notifications = 0 }: NavigationProps) => {
   return (
     <div className="md:hidden fixed bottom-0 left-0 w-full bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-gray-800/50 px-1 py-2 z-40 safe-area-bottom">
       <div className="flex justify-around items-center">
@@ -175,4 +175,4 @@ export function MobileBottomNav({ activeTab, setActiveTab, userData, notificatio
       </div>
     </div>
   );
-}
+});
