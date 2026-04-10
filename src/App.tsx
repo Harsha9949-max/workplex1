@@ -57,6 +57,9 @@ import {
 import LandingPage from './components/LandingPage';
 import { PublicProfile, ResellerShop, TeamChat } from './ViralLayer';
 import AdminPanel from './AdminPanel';
+import PartnerShop from './components/PartnerShop';
+import PartnerDashboard from './components/PartnerDashboard';
+import PartnerShopSetup from './components/PartnerShopSetup';
 import WalletScreen from './components/WalletScreen';
 import TasksScreen from './components/TasksScreen';
 import ProfileScreen from './components/ProfileScreen';
@@ -298,12 +301,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/shop/:username" element={<ResellerShop />} />
-          <Route path="/shop/:shopSlug" element={
-            (() => {
-              const PartnerShop = require('./components/PartnerShop').default;
-              return <PartnerShop />;
-            })()
-          } />
+          <Route path="/shop/:shopSlug" element={<PartnerShop />} />
           <Route path="/:username" element={<PublicProfile />} />
           <Route path="*" element={<MainApp />} />
         </Routes>
@@ -544,12 +542,10 @@ function MainApp() {
     const shopPublished = userData?.shopPublished;
 
     if (isPartner && shopPublished) {
-      const PartnerDashboard = require('./components/PartnerDashboard').default;
       return <PartnerDashboard user={user} userData={userData} />;
     }
 
     if (isPartner && !shopPublished) {
-      const PartnerShopSetup = require('./components/PartnerShopSetup').default;
       return <PartnerShopSetup user={user} userData={userData} />;
     }
 

@@ -10,7 +10,12 @@
       "Bash(npx *)",
       "Bash(firebase *)",
       "Bash(npm install)",
-      "Bash(timeout *)"
+      "Bash(timeout *)",
+      "Bash(tasklist)",
+      "Bash(findstr *)",
+      "Bash(taskkill *)",
+      "Bash(start-sleep *)",
+      "Bash(select-object *)"
     ]
   },
   "$version": 3
