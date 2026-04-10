@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Camera, Briefcase, CreditCard, ShieldCheck,
   FileText, CheckCircle, ChevronRight, ChevronLeft,
-  Loader2, AlertCircle, Upload, Lock
+  Loader2, AlertCircle, Upload, Lock, Wallet, ShoppingBag
 } from 'lucide-react';
-import { Venture, UserRole, VentureRoleMap, UserProfile } from '../types';
+import { Venture, UserRole, VentureRoleMap, UserProfile, UserMode } from '../types';
 import { encrypt } from '../lib/security';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -36,33 +37,45 @@ export default function OnboardingFlow({ user, onComplete, onCancel }: Onboardin
     wallets: { earned: 0, pending: 27, bonus: 0, savings: 0 },
     onboardingStatus: 'in_progress'
   });
+  const navigate = useNavigate();
 
-  const nextStep = () => setStep(s => Math.min(s + 1, 7));
+  const nextStep = () => setStep(s => Math.min(s + 1, 8));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
+
+  const totalSteps = formData.mode === 'Partner' ? 3 : 8;
+  const currentStepTitle = formData.mode === 'Partner' && step > 3 ? 'Shop Setup' : getStepTitle(step, formData.mode);
 
   const steps = [
     { id: 1, title: 'Identity', icon: <User size={20} /> },
     { id: 2, title: 'Portrait', icon: <Camera size={20} /> },
-    { id: 3, title: 'Venture', icon: <Briefcase size={20} /> },
-    { id: 4, title: 'Specialty', icon: <Briefcase size={20} /> },
-    { id: 5, title: 'Payouts', icon: <CreditCard size={20} /> },
-    { id: 6, title: 'KYC', icon: <ShieldCheck size={20} /> },
-    { id: 7, title: 'Contract', icon: <FileText size={20} /> },
+    { id: 3, title: 'Earning Mode', icon: <Wallet size={20} /> },
+    { id: 4, title: 'Venture', icon: <Briefcase size={20} /> },
+    { id: 5, title: 'Specialty', icon: <Briefcase size={20} /> },
+    { id: 6, title: 'Payouts', icon: <CreditCard size={20} /> },
+    { id: 7, title: 'KYC', icon: <ShieldCheck size={20} /> },
+    { id: 8, title: 'Contract', icon: <FileText size={20} /> },
   ];
+
+  const handleModeSelect = (mode: UserMode) => {
+    setFormData({ ...formData, mode });
+    if (mode === 'Partner') {
+      onComplete({ ...formData, mode, onboardingStatus: 'completed' });
+    } else {
+      nextStep();
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col">
-      {/* Progress Bar */}
       <div className="fixed top-0 left-0 w-full h-1 bg-[#111111] z-50">
         <motion.div
           className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7] shadow-[0_0_15px_rgba(232,184,75,0.5)]"
           initial={{ width: 0 }}
-          animate={{ width: `${(step / 7) * 100}%` }}
+          animate={{ width: `${(step / totalSteps) * 100}%` }}
         />
       </div>
 
       <div className="flex-1 flex flex-col max-w-xl mx-auto w-full px-6 pt-12 pb-24">
-        {/* Header */}
         <div className="mb-12">
           <button
             onClick={onCancel}
@@ -72,16 +85,17 @@ export default function OnboardingFlow({ user, onComplete, onCancel }: Onboardin
           </button>
           <div className="flex items-center gap-4 mb-4">
             <div className="w-12 h-12 bg-[#E8B84B]/10 rounded-2xl flex items-center justify-center text-[#E8B84B] border border-[#E8B84B]/20">
-              {steps[step - 1].icon}
+              {steps[step - 1]?.icon || <Wallet size={20} />}
             </div>
             <div>
-              <p className="text-[10px] font-black text-[#E8B84B] uppercase tracking-[0.2em] mb-1">Step {step} of 7</p>
-              <h1 className="text-3xl font-black tracking-tight">{steps[step - 1].title}</h1>
+              <p className="text-[10px] font-black text-[#E8B84B] uppercase tracking-[0.2em] mb-1">Step {step} of {totalSteps}</p>
+              <h1 className="text-3xl font-black tracking-tight">
+                {formData.mode === 'Partner' && step > 3 ? 'Setup Your Shop' : steps[step - 1]?.title || 'Earning Mode'}
+              </h1>
             </div>
           </div>
         </div>
 
-        {/* Content */}
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -92,11 +106,12 @@ export default function OnboardingFlow({ user, onComplete, onCancel }: Onboardin
           >
             {step === 1 && <IdentityStep data={formData} update={setFormData} onNext={nextStep} />}
             {step === 2 && <PhotoStep user={user} data={formData} update={setFormData} onNext={nextStep} />}
-            {step === 3 && <VentureStep data={formData} update={setFormData} onNext={nextStep} />}
-            {step === 4 && <RoleStep data={formData} update={setFormData} onNext={nextStep} />}
-            {step === 5 && <PayoutStep data={formData} update={setFormData} onNext={nextStep} />}
-            {step === 6 && <KycStep data={formData} update={setFormData} onNext={nextStep} />}
-            {step === 7 && <ContractStep data={formData} update={setFormData} onComplete={() => onComplete(formData)} />}
+            {step === 3 && <ModeStep onSelect={handleModeSelect} />}
+            {step === 4 && formData.mode === 'Promoter' && <VentureStep data={formData} update={setFormData} onNext={nextStep} />}
+            {step === 5 && formData.mode === 'Promoter' && <RoleStep data={formData} update={setFormData} onNext={nextStep} />}
+            {step === 6 && formData.mode === 'Promoter' && <PayoutStep data={formData} update={setFormData} onNext={nextStep} />}
+            {step === 7 && formData.mode === 'Promoter' && <KycStep data={formData} update={setFormData} onNext={nextStep} />}
+            {step === 8 && formData.mode === 'Promoter' && <ContractStep data={formData} update={setFormData} onComplete={() => onComplete(formData)} />}
           </motion.div>
         </AnimatePresence>
 
@@ -111,7 +126,19 @@ export default function OnboardingFlow({ user, onComplete, onCancel }: Onboardin
   );
 }
 
-// --- Sub-steps ---
+function getStepTitle(step: number, mode?: UserMode): string {
+  const titles: Record<number, string> = {
+    1: 'Identity',
+    2: 'Portrait',
+    3: 'Earning Mode',
+    4: 'Venture',
+    5: 'Specialty',
+    6: 'Payouts',
+    7: 'KYC',
+    8: 'Contract'
+  };
+  return titles[step] || 'Step';
+}
 
 function IdentityStep({ data, update, onNext }: any) {
   const isValid = data.name?.length >= 3 && data.age >= 18;
@@ -160,13 +187,11 @@ function PhotoStep({ user, data, update, onNext }: any) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       setError('Image must be less than 5MB');
       return;
     }
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       setError('Please select a valid image file');
       return;
@@ -178,8 +203,6 @@ function PhotoStep({ user, data, update, onNext }: any) {
       setError(null);
 
       const storageRef = ref(storage, `profiles/${user.uid}/photo`);
-
-      // Show progress during upload
       const snapshot = await uploadBytes(storageRef, file);
       setUploadProgress(100);
 
@@ -254,6 +277,42 @@ function PhotoStep({ user, data, update, onNext }: any) {
         className="w-full bg-transparent text-gray-500 hover:text-white font-bold py-4 rounded-2xl disabled:opacity-20 transition-colors text-sm"
       >
         Skip for now
+      </button>
+    </div>
+  );
+}
+
+function ModeStep({ onSelect }: { onSelect: (mode: UserMode) => void }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-4">How do you want to earn?</p>
+      
+      <button
+        onClick={() => onSelect('Promoter')}
+        className="w-full p-6 bg-[#111111] border border-white/5 rounded-3xl text-left transition-all hover:scale-[1.02] hover:border-[#E8B84B]/50 flex items-center gap-6 group"
+      >
+        <div className="w-14 h-14 rounded-2xl bg-[#E8B84B]/10 flex items-center justify-center group-hover:bg-[#E8B84B]/20 transition-colors">
+          <Briefcase size={28} className="text-[#E8B84B]" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-black text-white mb-1">Complete tasks & share coupons</h3>
+          <p className="text-xs text-gray-500 font-medium">Earn by promoting products using coupon codes on HVRS websites</p>
+        </div>
+        <ChevronRight size={20} className="text-gray-700 group-hover:text-[#E8B84B] transition-colors" />
+      </button>
+
+      <button
+        onClick={() => onSelect('Partner')}
+        className="w-full p-6 bg-[#111111] border border-white/5 rounded-3xl text-left transition-all hover:scale-[1.02] hover:border-[#00C9A7]/50 flex items-center gap-6 group"
+      >
+        <div className="w-14 h-14 rounded-2xl bg-[#00C9A7]/10 flex items-center justify-center group-hover:bg-[#00C9A7]/20 transition-colors">
+          <ShoppingBag size={28} className="text-[#00C9A7]" />
+        </div>
+        <div className="flex-1">
+          <h3 className="text-lg font-black text-white mb-1">Create your online shop</h3>
+          <p className="text-xs text-gray-500 font-medium">Build your own store without inventory, earn margin on every sale</p>
+        </div>
+        <ChevronRight size={20} className="text-gray-700 group-hover:text-[#00C9A7] transition-colors" />
       </button>
     </div>
   );

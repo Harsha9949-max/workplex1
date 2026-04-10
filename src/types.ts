@@ -43,8 +43,11 @@ export interface UserProfile {
   photoURL?: string;
   username: string;
   age: number;
-  venture: Venture;
-  role: UserRole;
+  venture?: Venture;
+  role?: UserRole;
+  mode?: UserMode;
+  shopPublished?: boolean;
+  shopSlug?: string;
   upiId: string;
   bankAccount: string;
   aadhaar: string; // AES Encrypted
@@ -125,8 +128,11 @@ export interface UserData {
   photoURL?: string;
   username: string;
   age: number;
-  venture: Venture;
-  role: UserRole;
+  venture?: Venture;
+  role?: UserRole;
+  mode?: UserMode;
+  shopPublished?: boolean;
+  shopSlug?: string;
   upiId?: string;
   bankAccount?: string;
   level?: string;
@@ -206,6 +212,121 @@ export interface Withdrawal {
   requestedAt?: any;
   processedAt?: any;
   [key: string]: any;
+}
+
+// --- Partner Store Types ---
+
+export type UserMode = 'Promoter' | 'Partner';
+
+export interface PartnerShop {
+  shopName: string;
+  shopSlug: string;
+  logo?: string;
+  ownerId: string;
+  ownerName: string;
+  ownerPhone: string;
+  isActive: boolean;
+  totalSales: number;
+  totalOrders: number;
+  totalMarginEarned: number;
+  createdAt: any;
+  lastActiveAt: any;
+}
+
+export interface PartnerProduct {
+  productId: string;
+  hvrsBasePrice: number;
+  partnerSellingPrice: number;
+  partnerMargin: number;
+  productName: string;
+  category: string;
+  images: string[];
+  description: string;
+  isActive: boolean;
+  addedAt: any;
+  totalSold: number;
+}
+
+export interface PartnerOrder {
+  orderId: string;
+  partnerId: string;
+  partnerShopName: string;
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  products: {
+    productId: string;
+    productName: string;
+    quantity: number;
+    hvrsBasePrice: number;
+    partnerSellingPrice: number;
+    partnerMargin: number;
+    subtotal: number;
+  }[];
+  totalAmount: number;
+  totalPartnerMargin: number;
+  totalHVRSAmount: number;
+  status: 'pending' | 'processing' | 'shipped' | 'delivered';
+  paymentStatus: 'pending' | 'paid' | 'failed';
+  orderedAt: any;
+  deliveredAt: any;
+  marginReleaseAt: any;
+  marginStatus: 'holding' | 'pending' | 'earned' | 'cancelled';
+  shippingAddress: {
+    name: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    pincode: string;
+  };
+  razorpayPaymentId?: string;
+  razorpayOrderId?: string;
+  razorpaySignature?: string;
+}
+
+export interface PartnerMargin {
+  orderId: string;
+  amount: number;
+  status: 'holding' | 'pending' | 'earned';
+  orderedAt: any;
+  releaseAt: any;
+  releasedAt: any;
+}
+
+export interface PartnerWallet {
+  pendingMargin: number;
+  availableMargin: number;
+  totalWithdrawn: number;
+}
+
+export interface PartnerWithdrawalRequest {
+  id: string;
+  partnerId: string;
+  partnerName: string;
+  partnerShopName: string;
+  amount: number;
+  upiId: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: any;
+  processedAt?: any;
+  rejectionReason?: string;
+}
+
+export interface CatalogProduct {
+  id: string;
+  skuId: string;
+  productName: string;
+  category: string;
+  hvrsBasePrice: number;
+  suggestedRetailPrice: number;
+  description: string;
+  images: string[];
+  stockStatus: 'in_stock' | 'out_of_stock';
+  venture: Venture;
+  isActive: boolean;
+  createdAt: any;
 }
 
 export interface Coupon {

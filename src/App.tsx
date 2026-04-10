@@ -298,6 +298,12 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/shop/:username" element={<ResellerShop />} />
+          <Route path="/shop/:shopSlug" element={
+            (() => {
+              const PartnerShop = require('./components/PartnerShop').default;
+              return <PartnerShop />;
+            })()
+          } />
           <Route path="/:username" element={<PublicProfile />} />
           <Route path="*" element={<MainApp />} />
         </Routes>
@@ -512,6 +518,20 @@ function MainApp() {
   }
 
   if (user && !isNewUser) {
+    const userMode = userData?.mode;
+    const isPartner = userMode === 'Partner';
+    const shopPublished = userData?.shopPublished;
+
+    if (isPartner && shopPublished) {
+      const PartnerDashboard = require('./components/PartnerDashboard').default;
+      return <PartnerDashboard user={user} userData={userData} />;
+    }
+
+    if (isPartner && !shopPublished) {
+      const PartnerShopSetup = require('./components/PartnerShopSetup').default;
+      return <PartnerShopSetup user={user} userData={userData} />;
+    }
+
     return <HomeDashboard user={user} />;
   }
 
