@@ -66,6 +66,16 @@ body {
   scrollbar-width: none;
 }
 
+/* No scrollbar - alias for hide-scrollbar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 /* Text glow effect */
 .text-glow {
   text-shadow: 0 0 20px rgba(232, 184, 75, 0.4);

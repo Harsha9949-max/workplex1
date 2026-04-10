@@ -6,7 +6,7 @@ import {
   CheckCircle, AlertCircle, Loader2, MapPin, Phone, Mail
 } from 'lucide-react';
 import {
-  doc, getDoc, collection, getDocs, query, where, addDoc, serverTimestamp
+  doc, getDoc, collection, getDocs, query, where, addDoc, serverTimestamp, setDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { PartnerShop, PartnerProduct, PartnerOrder } from '../types';

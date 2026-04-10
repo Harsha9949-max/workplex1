@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import {
   doc, onSnapshot, collection, query, where, orderBy,
-  limit, getDocs, updateDoc, serverTimestamp, setDoc
+  limit, getDocs, updateDoc, serverTimestamp, setDoc, addDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
@@ -104,11 +104,10 @@ export default function PartnerDashboard({ user, userData }: PartnerDashboardPro
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id as TabType)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  activeTab === item.id
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === item.id
                     ? 'bg-[#00C9A7] text-black'
                     : 'text-gray-400 hover:bg-white/5 hover:text-white'
-                }`}
+                  }`}
               >
                 {item.icon}
                 <span className="font-bold text-sm">{item.label}</span>
@@ -136,9 +135,8 @@ export default function PartnerDashboard({ user, userData }: PartnerDashboardPro
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id as TabType)}
-            className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl ${
-              activeTab === item.id ? 'text-[#00C9A7]' : 'text-gray-500'
-            }`}
+            className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl ${activeTab === item.id ? 'text-[#00C9A7]' : 'text-gray-500'
+              }`}
           >
             {item.icon}
             <span className="text-[10px] font-bold">{item.label}</span>

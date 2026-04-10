@@ -165,6 +165,7 @@ import {
 import { encrypt, getDeviceFingerprint } from './lib/security';
 import OnboardingFlow from './components/OnboardingFlow';
 import { handleFirestoreError } from './types';
+import { normalizeRole, isTeamLead, isPartner, getCurrentLevel } from './lib/roles';
 
 const ROLES = VentureRoleMap;
 
@@ -447,10 +448,7 @@ function MainApp() {
         return;
       }
 
-      console.log('Sending OTP to:', formattedPhone);
-
       const result = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
-      console.log('OTP sent successfully');
       setConfirmationResult(result);
       setPhoneAuthStep('otp');
     } catch (err: any) {
@@ -762,7 +760,7 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
   }, [user.uid, tasks]);
 
   useEffect(() => {
-    if (!userData || userData.role !== 'Reseller') return;
+    if (!userData || normalizeRole(userData.role) !== 'reseller') return;
     setIsAiLoading(true);
     // Simulate AI processing
     const timer = setTimeout(() => {
@@ -773,7 +771,7 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
   }, [userData?.role]);
 
   useEffect(() => {
-    if (userData?.role === 'Lead Marketer' || userData?.role === 'Manager') {
+    if (userData && isTeamLead(userData.role)) {
       const unsubTeam = onSnapshot(collection(db, `teams/${user.uid}/members`), (snapshot) => {
         setTeamSize(snapshot.size);
       });
@@ -910,10 +908,10 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
         </div>
         <div className="flex-1 space-y-2">
           <NavButton active={activeTab === 'home'} icon={<Home />} label="Home" onClick={() => setActiveTab('home')} direction="horizontal" />
-          {userData?.role === 'Reseller' && (
+          {userData && isPartner(userData.role) && (
             <NavButton active={activeTab === 'catalog'} icon={<ShoppingBag />} label="Catalog" onClick={() => setActiveTab('catalog')} direction="horizontal" />
           )}
-          {(userData?.role === 'Lead Marketer' || userData?.role === 'Manager') && (
+          {userData && isTeamLead(userData.role) && (
             <NavButton active={activeTab === 'chat'} icon={<Users />} label="Team" onClick={() => setActiveTab('chat')} direction="horizontal" />
           )}
           <NavButton active={activeTab === 'tasks'} icon={<ListTodo />} label="Tasks" onClick={() => setActiveTab('tasks')} direction="horizontal" />
@@ -1027,7 +1025,7 @@ function HomeDashboard({ user }: { user: FirebaseUser }) {
               </div>
 
               {/* Coupon Card */}
-              {(userData?.role === 'Marketer' || userData?.role === 'Content Creator') && (
+              {userData && (normalizeRole(userData.role) === 'marketer' || normalizeRole(userData.role) === 'content_creator') && (
                 <MemoizedCouponCard coupon={coupon} userData={userData} now={now} />
               )}
 
@@ -1262,7 +1260,7 @@ function AnnouncementSlider({ announcements }: { announcements: Announcement[] }
         >
           <Bell size={14} className="text-[#E8B84B]" />
           <span className="text-sm font-medium text-gray-300 truncate max-w-[80vw]">
-            {announcements[index]?.text}
+            {announcements[index]?.message}
           </span>
         </motion.div>
       </AnimatePresence>
