@@ -1,295 +1,357 @@
 /**
- * WorkPlex — Enhanced Profile Screen
- * Better profile display, stats, settings, referral section
+ * WorkPlex Phase 5 — Profile Screen
+ * User profile management, KYC, settings, logout, QR code, referral link
  */
 
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { QRCodeSVG } from 'qrcode.react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  CheckCircle,
-  Share2,
-  ShieldCheck,
-  UserCircle,
-  LogOut,
-  Copy,
-  QrCode,
-  ExternalLink,
-  TrendingUp,
-  Calendar,
-  Award,
-  Users,
-  Eye,
-  EyeOff,
-  Settings,
-  Bell,
-  Lock,
-  ChevronRight,
+  User, ShieldCheck, Bell, LogOut, Share2, QrCode,
+  Edit3, CheckCircle, ChevronRight, Copy, CopyCheck,
+  Users, Award, TrendingUp, Settings, Camera
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { auth, db } from '../firebase';
-import { updateDoc, doc } from 'firebase/firestore';
-import { UserData } from '../types';
-import { StreakDisplay, BadgeGrid, LevelProgress } from './Gamification';
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage, auth } from '../firebase';
+import { UserProfile, UserMode, getCurrentLevel, getNextLevel, getLevelProgress, formatCurrency } from '../types';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface ProfileScreenProps {
-  userData: UserData;
-  teamSize: number;
+  user: any;
+  userData: UserProfile;
   onLogout: () => void;
 }
 
-export default function ProfileScreen({ userData, teamSize, onLogout }: ProfileScreenProps) {
-  const referralLink = `${window.location.origin}/?ref=${auth.currentUser?.uid || ''}`;
-  const profileLink = `${window.location.origin}/${userData.username || ''}`;
-  const [copied, setCopied] = useState(false);
-  const [profileCopied, setProfileCopied] = useState(false);
+export default function ProfileScreen({ user, userData, onLogout }: ProfileScreenProps) {
+  const [mode] = useState<UserMode>(userData.mode || 'Promoter');
+  const [loading, setLoading] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showQR, setShowQR] = useState(false);
-  const [showTotalEarnedPublicly, setShowTotalEarnedPublicly] = useState(userData.showTotalEarnedPublicly !== false);
+  const [copied, setCopied] = useState(false);
+  const [editName, setEditName] = useState(userData.name || '');
+  const [editUPI, setEditUPI] = useState(userData.upiId || '');
+  const [editBank, setEditBank] = useState(userData.bankAccount || '');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [stats, setStats] = useState({
+    totalEarned: userData.wallets?.earned || 0,
+    tasksCompleted: 0,
+    teamSize: 0,
+    level: getCurrentLevel(userData.wallets?.earned || 0)
+  });
 
-  const handleTogglePublicEarned = async () => {
-    const newValue = !showTotalEarnedPublicly;
-    setShowTotalEarnedPublicly(newValue);
+  const level = getCurrentLevel(stats.totalEarned);
+  const nextLevel = getNextLevel(level);
+  const levelProgress = getLevelProgress(stats.totalEarned);
+
+  const referralLink = `${window.location.origin}/join?ref=${user.uid}`;
+
+  const copyReferralLink = async () => {
     try {
-      await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
-        showTotalEarnedPublicly: newValue
-      });
+      await navigator.clipboard.writeText(referralLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to update setting:', err);
+      console.error('Failed to copy');
     }
   };
 
-  const stats = [
-    {
-      label: 'Total Earned',
-      value: `₹${(userData.totalEarned || 0).toLocaleString()}`,
-      icon: <TrendingUp size={20} className="text-[#E8B84B]" />,
-      color: 'text-[#E8B84B]'
-    },
-    {
-      label: 'Day Streak',
-      value: `${userData.streak || 0}`,
-      icon: <Calendar size={20} className="text-orange-500" />,
-      color: 'text-orange-500'
-    },
-    ...(userData.role === 'lead_marketer' || userData.role === 'manager' ? [{
-      label: 'Team Size',
-      value: `${teamSize} Members`,
-      icon: <Users size={20} className="text-[#00C9A7]" />,
-      color: 'text-[#00C9A7]'
-    }] : []),
-    {
-      label: 'Badges',
-      value: `${(userData.badges || []).length}`,
-      icon: <Award size={20} className="text-purple-400" />,
-      color: 'text-purple-400'
-    },
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const fileRef = ref(storage, `profiles/${user.uid}/photo.jpg`);
+      const snapshot = await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      await updateDoc(doc(db, 'users', user.uid), { photoURL: url });
+    } catch (err) {
+      console.error('Photo upload error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        name: editName,
+        upiId: editUPI,
+        bankAccount: editBank,
+        updatedAt: serverTimestamp()
+      });
+      setShowEditModal(false);
+    } catch (err) {
+      console.error('Profile update error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const menuItems = [
+    { icon: Bell, label: 'Notifications', value: notificationsEnabled, onChange: () => setNotificationsEnabled(!notificationsEnabled), type: 'toggle' },
+    { icon: QrCode, label: 'QR Code', onClick: () => setShowQR(true), type: 'button' },
+    { icon: Share2, label: 'Share Profile', onClick: copyReferralLink, type: 'button' },
+    { icon: Settings, label: 'Settings', type: 'button' },
+    { icon: ShieldCheck, label: 'Privacy Policy', type: 'button' },
+    { icon: LogOut, label: 'Logout', onClick: onLogout, type: 'danger' }
   ];
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 pb-32 max-w-3xl mx-auto">
-      {/* QR Modal */}
-      {showQR && (
+    <div className="min-h-screen bg-[#0A0A0A] text-white pb-24">
+      {/* ===== HEADER ===== */}
+      <div className="bg-[#111111] border-b border-gray-800 p-4">
+        <h1 className="text-xl font-black">Profile</h1>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* ===== PROFILE CARD ===== */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex items-center justify-center p-4 sm:p-6"
-          onClick={() => setShowQR(false)}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-[#1A1A1A] rounded-2xl p-6 border border-gray-800"
         >
-          <motion.div
-            initial={{ scale: 0.9, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            className="bg-[#111111] p-6 sm:p-8 rounded-[2rem] border border-gray-800 flex flex-col items-center text-center max-w-xs w-full"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="bg-white p-4 rounded-2xl mb-6">
-              <QRCodeSVG value={referralLink} size={200} />
+          <div className="flex items-center gap-4 mb-6">
+            <div className="relative">
+              <img
+                src={userData.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`}
+                alt="Profile"
+                className="w-20 h-20 rounded-full border-2 border-[#E8B84B]/30"
+                referrerPolicy="no-referrer"
+              />
+              <label className="absolute bottom-0 right-0 w-8 h-8 bg-[#E8B84B] rounded-full flex items-center justify-center cursor-pointer hover:bg-[#D4A743] transition-colors">
+                <Camera className="w-4 h-4 text-black" />
+                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+              </label>
             </div>
-            <h3 className="text-xl font-bold mb-2">My Referral QR</h3>
-            <p className="text-gray-500 text-sm mb-6">Scan to join WorkPlex under {userData.name}</p>
+            <div className="flex-1">
+              <h2 className="text-xl font-black">{userData.name}</h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs bg-[#E8B84B]/20 text-[#E8B84B] px-2 py-0.5 rounded-full">
+                  {mode}
+                </span>
+                <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
+                  {userData.venture} • {userData.role}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{userData.phone}</p>
+            </div>
             <button
-              onClick={() => setShowQR(false)}
-              className="w-full bg-[#E8B84B] text-black font-bold py-3 rounded-xl active:scale-95 transition-transform"
+              onClick={() => setShowEditModal(true)}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors"
             >
-              Close
+              <Edit3 className="w-5 h-5 text-gray-400" />
             </button>
-          </motion.div>
+          </div>
+
+          {/* Level Progress */}
+          <div className="bg-[#111111] rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Award className="w-5 h-5 text-[#E8B84B]" />
+                <span className="font-bold">{level}</span>
+              </div>
+              {nextLevel && (
+                <span className="text-xs text-gray-500">Next: {nextLevel.name}</span>
+              )}
+            </div>
+            <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7]"
+                initial={{ width: 0 }}
+                animate={{ width: `${levelProgress}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              {formatCurrency(stats.totalEarned)} earned • {nextLevel ? formatCurrency(nextLevel.min - stats.totalEarned) : 'Max level'} to {nextLevel?.name || 'Legend'}
+            </p>
+          </div>
         </motion.div>
-      )}
 
-      {/* Profile Header */}
-      <motion.div
-        className="bg-gradient-to-br from-[#1A1A1A] to-[#111111] p-6 sm:p-8 rounded-2xl sm:rounded-3xl border border-gray-800/50"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6 text-center sm:text-left">
-          <div className="relative">
-            <motion.img
-              src={userData.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`}
-              className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl border-4 border-[#E8B84B]/30 object-cover"
-              alt="Profile"
-              referrerPolicy="no-referrer"
-              whileHover={{ scale: 1.05 }}
-            />
-            <div className="absolute -bottom-2 -right-2 bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
-              {userData.level}
+        {/* ===== STATS GRID ===== */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="grid grid-cols-2 gap-3"
+        >
+          {[
+            { label: 'Total Earned', value: formatCurrency(stats.totalEarned), icon: TrendingUp, color: '#00C9A7' },
+            { label: 'Tasks Done', value: stats.tasksCompleted, icon: CheckCircle, color: '#E8B84B' },
+            { label: 'Level', value: level, icon: Award, color: '#A855F7' },
+            { label: mode === 'Promoter' ? 'Team Size' : 'Products', value: stats.teamSize || 0, icon: Users, color: '#3B82F6' }
+          ].map((stat, i) => (
+            <div key={i} className="bg-[#1A1A1A] rounded-xl p-4 border border-gray-800">
+              <div className="flex items-center gap-2 mb-2">
+                <stat.icon className="w-4 h-4" style={{ color: stat.color }} />
+                <span className="text-xs text-gray-500">{stat.label}</span>
+              </div>
+              <p className="text-lg font-black" style={{ color: stat.color }}>{stat.value}</p>
             </div>
-          </div>
-          <div className="flex-1">
-            <h2 className="text-2xl font-black mb-1">{userData.name}</h2>
-            <p className="text-gray-500 text-sm mb-3">{userData.venture} · {userData.role}</p>
-            <StreakDisplay streak={userData.streak || 0} />
-          </div>
-        </div>
-      </motion.div>
+          ))}
+        </motion.div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {stats.map((stat, i) => (
+        {/* ===== REFERRAL LINK ===== */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="bg-[#1A1A1A] rounded-2xl p-4 border border-gray-800"
+        >
+          <h3 className="font-bold mb-3">Referral Link</h3>
+          <div className="bg-[#111111] rounded-xl p-3 flex items-center justify-between">
+            <span className="text-xs text-gray-400 truncate flex-1 mr-2">{referralLink}</span>
+            <button
+              onClick={copyReferralLink}
+              className="text-[#E8B84B] hover:text-[#D4A743] transition-colors"
+            >
+              {copied ? <CopyCheck className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+            </button>
+          </div>
+        </motion.div>
+
+        {/* ===== MENU ITEMS ===== */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="bg-[#1A1A1A] rounded-2xl border border-gray-800 overflow-hidden"
+        >
+          {menuItems.map((item, i) => (
+            <button
+              key={i}
+              onClick={item.onClick}
+              className={`w-full flex items-center justify-between p-4 border-b border-gray-800 last:border-b-0 hover:bg-white/5 transition-colors ${item.type === 'danger' ? 'text-red-500' : 'text-white'
+                }`}
+            >
+              <div className="flex items-center gap-3">
+                <item.icon className="w-5 h-5" />
+                <span className="font-bold">{item.label}</span>
+              </div>
+              {item.type === 'toggle' ? (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    item.onChange?.();
+                  }}
+                  className={`w-12 h-6 rounded-full p-1 cursor-pointer transition-colors ${item.value ? 'bg-[#00C9A7]' : 'bg-gray-700'
+                    }`}
+                >
+                  <motion.div
+                    className="w-4 h-4 bg-white rounded-full"
+                    animate={{ x: item.value ? 24 : 0 }}
+                  />
+                </div>
+              ) : (
+                <ChevronRight className="w-5 h-5 text-gray-500" />
+              )}
+            </button>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* ===== EDIT PROFILE MODAL ===== */}
+      <AnimatePresence>
+        {showEditModal && (
           <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="bg-[#111111] p-4 rounded-2xl border border-gray-800/50 hover:border-gray-700 transition-colors"
-          >
-            <div className="mb-2">{stat.icon}</div>
-            <p className={`text-lg sm:text-xl font-black ${stat.color}`}>{stat.value}</p>
-            <p className="text-[10px] text-gray-500 uppercase font-bold mt-0.5">{stat.label}</p>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Level Progress */}
-      <div className="bg-[#111111] p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50">
-        <LevelProgress totalEarned={userData.totalEarned || 0} currentLevel={userData.level || 'Bronze'} />
-      </div>
-
-      {/* Badges */}
-      <div className="bg-[#111111] p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50">
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-          <Award size={16} className="text-[#E8B84B]" />
-          Your Badges
-        </h3>
-        <BadgeGrid earnedBadges={userData.badges || []} />
-      </div>
-
-      {/* Privacy & Sharing */}
-      <div className="bg-[#111111] rounded-2xl sm:rounded-3xl border border-gray-800/50 divide-y divide-gray-800/50">
-        <h3 className="p-5 sm:p-6 pb-0 text-sm font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
-          <Settings size={16} />
-          Privacy & Sharing
-        </h3>
-
-        <div className="p-4 sm:p-5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-[#00C9A7]/10 rounded-xl flex items-center justify-center shrink-0">
-              {showTotalEarnedPublicly ? <Eye size={18} className="text-[#00C9A7]" /> : <EyeOff size={18} className="text-gray-500" />}
-            </div>
-            <div>
-              <h4 className="text-sm font-bold">Public Earnings</h4>
-              <p className="text-xs text-gray-500 mt-0.5">Show total earned on public profile</p>
-            </div>
-          </div>
-          <button
-            onClick={handleTogglePublicEarned}
-            className={`w-12 h-6 rounded-full transition-colors relative ${showTotalEarnedPublicly ? 'bg-[#00C9A7]' : 'bg-gray-700'}`}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+            onClick={() => setShowEditModal(false)}
           >
             <motion.div
-              animate={{ x: showTotalEarnedPublicly ? 24 : 4 }}
-              className="w-4 h-4 bg-white rounded-full absolute top-1 shadow-sm"
-            />
-          </button>
-        </div>
-
-        <div className="p-4 sm:p-5 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-          <div className="flex items-start gap-3">
-            <div className="w-10 h-10 bg-[#E8B84B]/10 rounded-xl flex items-center justify-center shrink-0">
-              <Share2 size={18} className="text-[#E8B84B]" />
-            </div>
-            <div className="flex-1 min-w-0 mr-3">
-              <h4 className="text-sm font-bold">Share Profile</h4>
-              <p className="text-[10px] text-gray-500 mt-0.5 truncate">{profileLink}</p>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(profileLink);
-              setProfileCopied(true);
-              setTimeout(() => setProfileCopied(false), 2000);
-            }}
-            className="p-2.5 bg-gray-800 rounded-xl text-[#E8B84B] active:scale-95 transition-transform hover:bg-gray-700"
-          >
-            {profileCopied ? <CheckCircle size={18} /> : <Copy size={18} />}
-          </button>
-        </div>
-      </div>
-
-      {/* Viral Growth */}
-      <div className="bg-[#111111] rounded-2xl sm:rounded-3xl border border-gray-800/50 p-4 sm:p-5">
-        <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-          <ExternalLink size={16} />
-          Viral Growth
-        </h3>
-        <div className="grid grid-cols-2 gap-3">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() => setShowQR(true)}
-            className="bg-[#1A1A1A] p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-gray-800/50 flex flex-col items-center gap-3 hover:border-[#E8B84B]/30 transition-colors"
-          >
-            <div className="w-12 h-12 bg-[#E8B84B]/10 rounded-xl flex items-center justify-center">
-              <QrCode className="text-[#E8B84B]" size={24} />
-            </div>
-            <span className="font-bold text-xs sm:text-sm">My QR Code</span>
-          </motion.button>
-          <Link
-            to={`/${userData.username || ''}`}
-            className="bg-[#1A1A1A] p-4 sm:p-6 rounded-xl sm:rounded-2xl border border-gray-800/50 flex flex-col items-center gap-3 hover:border-[#00C9A7]/30 transition-colors active:scale-95"
-          >
-            <div className="w-12 h-12 bg-[#00C9A7]/10 rounded-xl flex items-center justify-center">
-              <UserCircle className="text-[#00C9A7]" size={24} />
-            </div>
-            <span className="font-bold text-xs sm:text-sm">Public Profile</span>
-          </Link>
-        </div>
-      </div>
-
-      {/* Referral Link */}
-      {(userData.role === 'lead_marketer' || userData.role === 'manager') && (
-        <div className="bg-[#111111] p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50">
-          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-            <Share2 size={16} />
-            Referral Link
-          </h3>
-          <div className="flex items-center gap-3 bg-black/50 p-3 sm:p-4 rounded-xl border border-gray-800/50">
-            <span className="text-xs text-gray-400 truncate flex-1 font-mono">{referralLink}</span>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(referralLink);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="text-[#E8B84B] flex items-center gap-2 shrink-0 hover:gap-3 transition-all"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-[#1A1A1A] w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 border border-gray-800"
+              onClick={(e) => e.stopPropagation()}
             >
-              {copied ? <CheckCircle size={18} /> : <Copy size={18} />}
-              {copied && <span className="text-[10px] font-bold">Copied!</span>}
-            </button>
-          </div>
-        </div>
-      )}
+              <h3 className="text-xl font-black mb-4">Edit Profile</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Name</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full bg-[#111111] border border-gray-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#E8B84B]/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">UPI ID</label>
+                  <input
+                    type="text"
+                    value={editUPI}
+                    onChange={(e) => setEditUPI(e.target.value)}
+                    placeholder="yourname@upi"
+                    className="w-full bg-[#111111] border border-gray-800 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#E8B84B]/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold mb-2">Bank Account</label>
+                  <input
+                    type="text"
+                    value={editBank}
+                    onChange={(e) => setEditBank(e.target.value)}
+                    className="w-full bg-[#111111] border border-gray-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#E8B84B]/50"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 bg-gray-800 text-gray-400 font-bold py-3 rounded-xl hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={loading}
+                  className="flex-1 bg-[#E8B84B] text-black font-bold py-3 rounded-xl hover:bg-[#D4A743] transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Logout */}
-      <motion.button
-        onClick={onLogout}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
-        className="w-full bg-red-500/10 text-red-500 font-bold py-3.5 sm:py-4 rounded-xl border border-red-500/20 flex items-center justify-center gap-2 hover:bg-red-500/20 transition-colors active:scale-[0.98]"
-      >
-        <LogOut size={18} />
-        Logout
-      </motion.button>
+      {/* ===== QR CODE MODAL ===== */}
+      <AnimatePresence>
+        {showQR && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowQR(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#1A1A1A] rounded-3xl p-6 max-w-sm w-full border border-gray-800 text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-xl font-black mb-4">My QR Code</h3>
+              <div className="bg-white p-4 rounded-2xl inline-block mb-4">
+                <QRCodeSVG value={referralLink} size={200} />
+              </div>
+              <p className="text-sm text-gray-400 mb-4">Scan to join WorkPlex</p>
+              <button
+                onClick={() => setShowQR(false)}
+                className="w-full bg-[#E8B84B] text-black font-bold py-3 rounded-xl hover:bg-[#D4A743] transition-colors"
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

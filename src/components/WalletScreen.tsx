@@ -1,587 +1,593 @@
 /**
- * WorkPlex — Enhanced Wallet Screen
- * Improved wallet cards, withdrawal flow, savings slider, transaction history
+ * WorkPlex Phase 4 — Wallet System + Razorpay Withdrawal
+ * Complete wallet management for BOTH Promoters and Partners
+ * 4 wallet cards, withdrawal flow, transaction history, auto-savings
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Wallet,
-  TrendingUp,
-  ShieldCheck,
-  ShieldAlert,
-  ArrowUpCircle,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-  ChevronRight,
-  Banknote,
-  Sparkles,
-  Send,
-  ArrowDownLeft,
-  Clock,
-  Filter,
+  Wallet, TrendingUp, ArrowUpCircle, ArrowDownCircle, Clock,
+  CheckCircle, XCircle, AlertCircle, ChevronRight, Search,
+  Copy, Share2, Zap, PiggyBank, CreditCard, DollarSign
 } from 'lucide-react';
 import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  doc,
-  increment,
-  serverTimestamp,
+  collection, query, where, orderBy, limit, onSnapshot,
+  addDoc, updateDoc, doc, serverTimestamp, getDocs
 } from 'firebase/firestore';
-import { auth, db } from '../firebase';
-import { UserData, OperationType, handleFirestoreError, Transaction, Withdrawal } from '../types';
-
-interface WalletCardProps {
-  label: string;
-  amount: number;
-  color: string;
-  bgColor: string;
-  borderColor: string;
-  icon: React.ReactNode;
-  subtitle?: string;
-  gradient: string;
-}
-
-function WalletCard({ label, amount, color, bgColor, borderColor, icon, subtitle, gradient }: WalletCardProps) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      whileHover={{ scale: 1.03, y: -2 }}
-      className={`${bgColor} p-4 sm:p-5 rounded-2xl sm:rounded-3xl border ${borderColor} flex flex-col gap-3 relative overflow-hidden group cursor-pointer`}
-    >
-      {/* Gradient overlay */}
-      <div className={`absolute inset-0 ${gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
-
-      <div className="relative z-10">
-        <div className="flex justify-between items-start mb-2">
-          <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center ${color} bg-white/10 backdrop-blur-sm`}>
-            {icon}
-          </div>
-          <span className={`text-[9px] sm:text-[10px] font-bold uppercase tracking-widest ${color}/70`}>{label}</span>
-        </div>
-        <div>
-          <p className={`text-xl sm:text-2xl font-black ${color}`}>₹{amount.toLocaleString()}</p>
-          {subtitle && <p className="text-[9px] sm:text-[10px] text-white/50 font-medium mt-0.5">{subtitle}</p>}
-        </div>
-      </div>
-    </motion.div>
-  );
-}
+import { db, auth } from '../firebase';
+import { UserProfile, UserMode, formatCurrency } from '../types';
+import { isValidUPI } from '../lib/security';
 
 interface WalletScreenProps {
-  userData: UserData;
+  user: any;
+  userData: UserProfile;
 }
 
-export default function WalletScreen({ userData }: WalletScreenProps) {
-  const [amount, setAmount] = useState('');
-  const [upiId, setUpiId] = useState('');
-  const [savingsPercent, setSavingsPercent] = useState(userData?.savingsPercent || 0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [activeWithdrawTab, setActiveWithdrawTab] = useState<'normal' | 'family'>('normal');
-  const [transactionFilter, setTransactionFilter] = useState<'all' | 'credit' | 'debit'>('all');
+type TransactionType = 'earning' | 'withdrawal' | 'bonus' | 'streak' | 'referral' | 'coupon_commission' | 'shop_margin';
+
+interface TransactionDoc {
+  id: string;
+  type: TransactionType;
+  amount: number;
+  status: 'pending' | 'completed' | 'rejected';
+  description: string;
+  createdAt: any;
+}
+
+export default function WalletScreen({ user, userData }: WalletScreenProps) {
+  const [mode] = useState<UserMode>(userData.mode || 'Promoter');
+  const [loading, setLoading] = useState(true);
   const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawError, setWithdrawError] = useState('');
+  const [transactions, setTransactions] = useState<TransactionDoc[]>([]);
+  const [withdrawals, setWithdrawals] = useState<any[]>([]);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [wallets, setWallets] = useState({
+    earned: userData.wallets?.earned || 0,
+    pending: userData.wallets?.pending || 0,
+    bonus: userData.wallets?.bonus || 0,
+    savings: userData.wallets?.savings || 0
+  });
+  const [savingsPercent, setSavingsPercent] = useState(userData.savingsPercent || 0);
+  const [showBonusCelebration, setShowBonusCelebration] = useState(false);
+  const [bonusUnlocked, setBonusUnlocked] = useState(false);
 
-  // Bonus conversion milestone - ₹200 threshold
-  const bonusToEarnedProgress = Math.min(100, ((userData.wallets?.bonus || 0) / 200) * 100);
-  const canConvertBonus = (userData.wallets?.bonus || 0) >= 200;
-
+  // Real-time listener for user wallet data
   useEffect(() => {
-    if (!auth.currentUser) return;
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        setWallets(data.wallets || { earned: 0, pending: 0, bonus: 0, savings: 0 });
+        setSavingsPercent(data.savingsPercent || 0);
+        setLoading(false);
+      }
+    });
+    return () => unsub();
+  }, [user.uid]);
+
+  // Real-time listener for transactions
+  useEffect(() => {
     const q = query(
       collection(db, 'transactions'),
-      where('userId', '==', auth.currentUser.uid),
+      where('userId', '==', user.uid),
       orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as TransactionDoc)));
+      if (snap.docs.length < 10) setHasMore(false);
+      setLastVisible(snap.docs[snap.docs.length - 1]);
+    });
+    return () => unsub();
+  }, [user.uid]);
+
+  // Real-time listener for withdrawals
+  useEffect(() => {
+    const q = query(
+      collection(db, 'withdrawals'),
+      where('workerId', '==', user.uid),
+      orderBy('requestedAt', 'desc'),
       limit(20)
     );
-    const unsub = onSnapshot(
-      q,
-      (snap) => setTransactions(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => handleFirestoreError(err, OperationType.LIST, 'transactions')
-    );
-    return () => unsub();
-  }, []);
-
-  const handleWithdraw = async (type: 'normal' | 'family_transfer') => {
-    setError(null);
-    if (!userData.kycDone) {
-      setError('Complete KYC verification first to withdraw funds.');
-      return;
-    }
-    const amt = parseFloat(amount);
-    if (!amount || amt < 200) {
-      setError('Minimum withdrawal amount is ₹200.');
-      return;
-    }
-    if (type === 'family_transfer' && !upiId.trim()) {
-      setError('Please enter the recipient UPI ID.');
-      return;
-    }
-    if (amt > (userData.wallets?.earned || 0)) {
-      setError('Insufficient earned balance.');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      const targetUpi = type === 'family_transfer' ? upiId.trim() : userData.upiId;
-
-      await addDoc(collection(db, 'withdrawals'), {
-        userId: auth.currentUser?.uid,
-        userName: userData.name,
-        amount: amt,
-        type,
-        upiId: targetUpi,
-        status: 'pending',
-        requestedAt: serverTimestamp(),
-        description: type === 'family_transfer' ? `Family Transfer to ${targetUpi}` : 'Standard Withdrawal',
-      });
-
-      await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
-        'wallets.earned': increment(-amt),
-      });
-
-      await addDoc(collection(db, 'transactions'), {
-        userId: auth.currentUser?.uid,
-        amount: -amt,
-        type: 'withdrawal',
-        description: type === 'family_transfer' ? `Sent to ${targetUpi}` : 'Withdrawal requested',
-        createdAt: serverTimestamp(),
-      });
-
-      setSuccess(true);
-      setAmount('');
-      setUpiId('');
-      setTimeout(() => {
-        setSuccess(false);
-        setShowWithdrawForm(false);
-      }, 3000);
-    } catch (err: any) {
-      setError(err.message || 'Withdrawal failed. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConvertBonus = async () => {
-    if (!canConvertBonus || !auth.currentUser) return;
-    try {
-      setLoading(true);
-      const bonusAmt = userData.wallets?.bonus || 0;
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-        'wallets.bonus': 0,
-        'wallets.earned': increment(bonusAmt),
-      });
-      await addDoc(collection(db, 'transactions'), {
-        userId: auth.currentUser.uid,
-        amount: bonusAmt,
-        type: 'bonus',
-        description: 'Bonus converted to earned wallet',
-        createdAt: serverTimestamp(),
-      });
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSavingsUpdate = async (pct: number) => {
-    setSavingsPercent(pct);
-    if (!auth.currentUser) return;
-    await updateDoc(doc(db, 'users', auth.currentUser.uid), {
-      savingsPercent: pct,
+    const unsub = onSnapshot(q, (snap) => {
+      setWithdrawals(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
+    return () => unsub();
+  }, [user.uid]);
+
+  // Bonus unlock check
+  useEffect(() => {
+    if (!bonusUnlocked && wallets.earned >= 200 && wallets.bonus > 0) {
+      setBonusUnlocked(true);
+      setShowBonusCelebration(true);
+      // Move bonus to earned
+      setTimeout(async () => {
+        try {
+          await updateDoc(doc(db, 'users', user.uid), {
+            'wallets.earned': wallets.earned + wallets.bonus,
+            'wallets.bonus': 0
+          });
+        } catch (err) {
+          console.error('Error unlocking bonus:', err);
+        }
+      }, 2000);
+    }
+  }, [wallets.earned, wallets.bonus, bonusUnlocked, user.uid]);
+
+  const loadMoreTransactions = useCallback(async () => {
+    if (!lastVisible || !hasMore) return;
+    const q = query(
+      collection(db, 'transactions'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+    // Note: In production, use startAfter(lastVisible) for pagination
+  }, [lastVisible, hasMore, user.uid]);
+
+  const handleWithdraw = async () => {
+    setWithdrawError('');
+
+    // Validate KYC
+    if (!userData.kycDone) {
+      setWithdrawError('KYC verification required. Please complete your profile.');
+      return;
+    }
+
+    // Validate amount
+    const amount = parseFloat(withdrawAmount);
+    if (isNaN(amount) || amount < 200) {
+      setWithdrawError('Minimum withdrawal amount is Rs.200');
+      return;
+    }
+
+    if (amount > wallets.earned) {
+      setWithdrawError('Insufficient balance in earned wallet');
+      return;
+    }
+
+    // Validate UPI
+    if (!userData.upiId || !isValidUPI(userData.upiId)) {
+      setWithdrawError('Invalid UPI ID. Please update your UPI ID in profile.');
+      return;
+    }
+
+    try {
+      // Create withdrawal request
+      await addDoc(collection(db, 'withdrawals'), {
+        workerId: user.uid,
+        workerMode: mode,
+        amount,
+        upiId: userData.upiId,
+        status: 'pending',
+        requestedAt: serverTimestamp()
+      });
+
+      // Deduct from earned wallet (pending withdrawal)
+      await updateDoc(doc(db, 'users', user.uid), {
+        'wallets.earned': wallets.earned - amount,
+        'wallets.pending': wallets.pending + amount
+      });
+
+      // Create transaction record
+      await addDoc(collection(db, 'transactions'), {
+        userId: user.uid,
+        type: 'withdrawal',
+        amount: -amount,
+        status: 'pending',
+        description: `Withdrawal request - ${formatCurrency(amount)}`,
+        createdAt: serverTimestamp()
+      });
+
+      setShowWithdrawForm(false);
+      setWithdrawAmount('');
+    } catch (error) {
+      console.error('Withdrawal error:', error);
+      setWithdrawError('Failed to process withdrawal. Please try again.');
+    }
   };
 
-  const filteredTransactions = transactions.filter(tx => {
-    if (transactionFilter === 'all') return true;
-    if (transactionFilter === 'credit') return tx.amount > 0;
-    if (transactionFilter === 'debit') return tx.amount < 0;
-    return true;
-  });
+  const getTransactionColor = (type: TransactionType, status: string): string => {
+    if (status === 'rejected') return 'text-red-500';
+    if (status === 'pending') return 'text-yellow-500';
+    if (type === 'withdrawal') return 'text-red-500';
+    return 'text-green-500';
+  };
 
-  const totalBalance = (userData.wallets?.earned || 0) +
-    (userData.wallets?.pending || 0) +
-    (userData.wallets?.bonus || 0) +
-    (userData.wallets?.savings || 0);
+  const getTransactionIcon = (type: TransactionType) => {
+    switch (type) {
+      case 'earning': return <ArrowDownCircle className="w-5 h-5 text-green-500" />;
+      case 'withdrawal': return <ArrowUpCircle className="w-5 h-5 text-red-500" />;
+      case 'bonus': return <Zap className="w-5 h-5 text-purple-500" />;
+      case 'streak': return <TrendingUp className="w-5 h-5 text-blue-500" />;
+      case 'referral': return <Share2 className="w-5 h-5 text-teal-500" />;
+      case 'coupon_commission': return <CreditCard className="w-5 h-5 text-orange-500" />;
+      case 'shop_margin': return <DollarSign className="w-5 h-5 text-[#00C9A7]" />;
+      default: return <Clock className="w-5 h-5 text-gray-500" />;
+    }
+  };
+
+  const getModeDescription = (type: TransactionType): string => {
+    if (mode === 'Promoter') {
+      switch (type) {
+        case 'earning': return 'Task approved';
+        case 'coupon_commission': return 'Coupon commission';
+        case 'streak': return 'Streak bonus';
+        case 'referral': return 'Referral bonus';
+        case 'bonus': return 'Signup bonus';
+        default: return type;
+      }
+    } else {
+      switch (type) {
+        case 'earning': return 'Shop order margin';
+        case 'shop_margin': return 'Product sale';
+        case 'streak': return 'Streak bonus';
+        case 'bonus': return 'Signup bonus';
+        default: return type;
+      }
+    }
+  };
+
+  const walletCards = [
+    {
+      label: 'Earned',
+      amount: wallets.earned,
+      color: '#00C9A7',
+      icon: Wallet,
+      description: mode === 'Promoter' ? 'From tasks & coupons' : 'From shop margins',
+      withdrawable: true
+    },
+    {
+      label: 'Pending',
+      amount: wallets.pending,
+      color: '#F59E0B',
+      icon: Clock,
+      description: 'Awaiting confirmation',
+      withdrawable: false
+    },
+    {
+      label: 'Bonus',
+      amount: wallets.bonus,
+      color: '#A855F7',
+      icon: Zap,
+      description: 'Unlocks at Rs.200 earned',
+      withdrawable: false
+    },
+    {
+      label: 'Savings',
+      amount: wallets.savings,
+      color: '#3B82F6',
+      icon: PiggyBank,
+      description: `${savingsPercent}% auto-save`,
+      withdrawable: true
+    }
+  ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          className="w-12 h-12 border-4 border-[#E8B84B]/30 border-t-[#E8B84B] rounded-full"
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-4 sm:space-y-6 pb-36 max-w-3xl mx-auto">
-      {/* Header with Total Balance */}
-      <motion.div
-        className="bg-gradient-to-br from-[#1A1A1A] to-[#111111] p-5 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#E8B84B]/10 rounded-xl sm:rounded-2xl flex items-center justify-center">
-              <Wallet className="text-[#E8B84B]" size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg sm:text-xl font-black">My Wallet</h2>
-              <p className="text-gray-500 text-xs font-medium">
-                {userData.kycDone ? 'KYC Verified' : 'KYC Pending'}
-              </p>
-            </div>
-          </div>
-          {!showWithdrawForm && userData.kycDone && (
-            <button
-              onClick={() => setShowWithdrawForm(true)}
-              className="bg-[#E8B84B] text-black px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 hover:bg-[#F5D08A] transition-colors"
-            >
-              <ArrowUpCircle size={14} />
-              Withdraw
-            </button>
-          )}
-        </div>
-        <div>
-          <p className="text-xs sm:text-sm text-gray-400 mb-1">Total Balance</p>
-          <p className="text-3xl sm:text-4xl font-black text-white">₹{totalBalance.toLocaleString()}</p>
-        </div>
-      </motion.div>
+    <div className="min-h-screen bg-[#0A0A0A] text-white pb-24">
+      {/* ===== HEADER ===== */}
+      <div className="bg-[#111111] border-b border-gray-800 p-4">
+        <h1 className="text-xl font-black mb-1">My Wallet</h1>
+        <p className="text-xs text-gray-500">{mode === 'Promoter' ? 'Task & Commission Earnings' : 'Shop Margin Earnings'}</p>
+      </div>
 
-      {/* KYC Banner */}
-      <AnimatePresence>
-        {!userData.kycDone && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.97, height: 0 }}
-            animate={{ opacity: 1, scale: 1, height: 'auto' }}
-            exit={{ opacity: 0, scale: 0.97, height: 0 }}
-            className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-4"
-          >
-            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-500/20 rounded-xl flex items-center justify-center shrink-0">
-              <ShieldAlert className="text-amber-400" size={20} />
-            </div>
-            <div className="flex-1">
-              <p className="font-bold text-amber-300 text-sm">KYC Verification Pending</p>
-              <p className="text-amber-400/70 text-xs mt-1">
-                Submit your Aadhaar & PAN to unlock withdrawals and higher earning limits.
+      <div className="p-4 space-y-4">
+        {/* ===== WALLET CARDS ===== */}
+        <div className="grid grid-cols-2 gap-3">
+          {walletCards.map((wallet, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="rounded-2xl p-4 border"
+              style={{
+                backgroundColor: `${wallet.color}10`,
+                borderColor: `${wallet.color}30`
+              }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <wallet.icon className="w-5 h-5" style={{ color: wallet.color }} />
+                {wallet.withdrawable && (
+                  <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-white/70">
+                    Withdrawable
+                  </span>
+                )}
+              </div>
+              <p className="text-2xl font-black" style={{ color: wallet.color }}>
+                {formatCurrency(wallet.amount)}
               </p>
+              <p className="text-xs text-gray-500 mt-1">{wallet.label}</p>
+              <p className="text-[10px] text-gray-600">{wallet.description}</p>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* ===== BONUS PROGRESS ===== */}
+        {!bonusUnlocked && wallets.bonus > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-[#A855F7]/10 border border-[#A855F7]/30 rounded-2xl p-4"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="w-5 h-5 text-[#A855F7]" />
+                <h3 className="font-bold text-[#A855F7]">Bonus Progress</h3>
+              </div>
+              <span className="text-xs text-gray-400">{formatCurrency(wallets.earned)} / Rs.200</span>
+            </div>
+            <div className="w-full h-3 bg-gray-800 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-[#A855F7]"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(100, (wallets.earned / 200) * 100)}%` }}
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Earn Rs.{200 - wallets.earned} more to unlock your bonus wallet
+            </p>
+          </motion.div>
+        )}
+
+        {/* ===== AUTO-SAVINGS TOGGLE ===== */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-[#1A1A1A] rounded-2xl p-4 border border-gray-800"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <PiggyBank className="w-5 h-5 text-[#3B82F6]" />
+              <h3 className="font-bold">Auto-Savings</h3>
+            </div>
+            <span className="text-sm text-[#3B82F6] font-bold">{savingsPercent}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="50"
+            value={savingsPercent}
+            onChange={async (e) => {
+              const newPercent = parseInt(e.target.value);
+              setSavingsPercent(newPercent);
+              try {
+                await updateDoc(doc(db, 'users', user.uid), {
+                  savingsPercent: newPercent
+                });
+              } catch (err) {
+                console.error('Error updating savings percent:', err);
+              }
+            }}
+            className="w-full h-2 bg-gray-800 rounded-full appearance-none cursor-pointer"
+            style={{ accentColor: '#3B82F6' }}
+          />
+          <div className="flex justify-between mt-2">
+            <span className="text-xs text-gray-600">0%</span>
+            <span className="text-xs text-gray-600">50%</span>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Automatically save {savingsPercent}% of every earning to your savings wallet
+          </p>
+        </motion.div>
+
+        {/* ===== WITHDRAW BUTTON ===== */}
+        <motion.button
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => setShowWithdrawForm(true)}
+          className="w-full bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform"
+        >
+          <ArrowUpCircle className="w-5 h-5" />
+          Withdraw to UPI
+        </motion.button>
+
+        {/* ===== RECENT WITHDRAWALS ===== */}
+        {withdrawals.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <h3 className="font-bold text-lg mb-3">Recent Withdrawals</h3>
+            <div className="space-y-3">
+              {withdrawals.slice(0, 5).map((w) => (
+                <div key={w.id} className="bg-[#1A1A1A] rounded-xl p-4 border border-gray-800">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <ArrowUpCircle className="w-5 h-5 text-red-500" />
+                      <div>
+                        <p className="font-bold text-sm">{formatCurrency(w.amount)}</p>
+                        <p className="text-xs text-gray-500">{w.upiId}</p>
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded-full ${w.status === 'paid' ? 'bg-green-500/20 text-green-500' :
+                      w.status === 'approved' ? 'bg-blue-500/20 text-blue-500' :
+                        w.status === 'rejected' ? 'bg-red-500/20 text-red-500' :
+                          'bg-yellow-500/20 text-yellow-500'
+                      }`}>
+                      {w.status}
+                    </span>
+                  </div>
+                  {w.status === 'rejected' && w.rejectionReason && (
+                    <p className="text-xs text-red-400 mt-2">Reason: {w.rejectionReason}</p>
+                  )}
+                </div>
+              ))}
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* 4 Wallet Cards */}
-      <div className="grid grid-cols-2 gap-3">
-        <WalletCard
-          label="Earned"
-          amount={userData.wallets?.earned || 0}
-          color="text-[#00C9A7]"
-          bgColor="bg-gradient-to-br from-[#00C9A7]/10 to-[#00C9A7]/5"
-          borderColor="border-[#00C9A7]/20"
-          icon={<TrendingUp size={20} className="text-[#00C9A7]" />}
-          subtitle="Withdrawable"
-          gradient="bg-gradient-to-br from-[#00C9A7]/20 to-transparent"
-        />
-        <WalletCard
-          label="Pending"
-          amount={userData.wallets?.pending || 0}
-          color="text-[#E8B84B]"
-          bgColor="bg-gradient-to-br from-[#E8B84B]/10 to-[#E8B84B]/5"
-          borderColor="border-[#E8B84B]/20"
-          icon={<Clock size={20} className="text-[#E8B84B]" />}
-          subtitle="Awaiting approval"
-          gradient="bg-gradient-to-br from-[#E8B84B]/20 to-transparent"
-        />
-        <WalletCard
-          label="Bonus"
-          amount={userData.wallets?.bonus || 0}
-          color="text-purple-400"
-          bgColor="bg-gradient-to-br from-purple-500/10 to-purple-500/5"
-          borderColor="border-purple-500/20"
-          icon={<Sparkles size={20} className="text-purple-400" />}
-          subtitle="Convert at ₹200"
-          gradient="bg-gradient-to-br from-purple-500/20 to-transparent"
-        />
-        <WalletCard
-          label="Savings"
-          amount={userData.wallets?.savings || 0}
-          color="text-blue-400"
-          bgColor="bg-gradient-to-br from-blue-500/10 to-blue-500/5"
-          borderColor="border-blue-500/20"
-          icon={<Banknote size={20} className="text-blue-400" />}
-          subtitle={`${savingsPercent}% auto-save`}
-          gradient="bg-gradient-to-br from-blue-500/20 to-transparent"
-        />
+        {/* ===== TRANSACTION HISTORY ===== */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h3 className="font-bold text-lg mb-3">Transaction History</h3>
+          {transactions.length > 0 ? (
+            <div className="space-y-2">
+              {transactions.map((tx) => (
+                <div key={tx.id} className="bg-[#1A1A1A] rounded-xl p-4 border border-gray-800 flex items-center gap-3">
+                  {getTransactionIcon(tx.type)}
+                  <div className="flex-1">
+                    <p className="text-sm font-bold">{getModeDescription(tx.type)}</p>
+                    <p className="text-xs text-gray-500">
+                      {tx.createdAt?.toDate ? tx.createdAt.toDate().toLocaleDateString() : 'Just now'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-bold ${getTransactionColor(tx.type, tx.status)}`}>
+                      {tx.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(tx.amount))}
+                    </p>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${tx.status === 'completed' ? 'bg-green-500/20 text-green-500' :
+                      tx.status === 'rejected' ? 'bg-red-500/20 text-red-500' :
+                        'bg-yellow-500/20 text-yellow-500'
+                      }`}>
+                      {tx.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-[#1A1A1A] rounded-xl p-8 border border-gray-800 text-center">
+              <Wallet className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No transactions yet</p>
+            </div>
+          )}
+        </motion.div>
       </div>
 
-      {/* Withdraw Form */}
+      {/* ===== WITHDRAW MODAL ===== */}
       <AnimatePresence>
         {showWithdrawForm && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="bg-[#111111] p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-gray-800/50 space-y-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+            onClick={() => setShowWithdrawForm(false)}
           >
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-gray-200 flex items-center gap-2">
-                <ArrowUpCircle size={18} className="text-[#E8B84B]" />
-                Withdraw Funds
-              </h3>
-              <button
-                onClick={() => setShowWithdrawForm(false)}
-                className="text-gray-500 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Tab switch */}
-            <div className="grid grid-cols-2 gap-2 bg-black/50 p-1 rounded-xl">
-              {(['normal', 'family'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveWithdrawTab(tab)}
-                  className={`py-2.5 rounded-xl text-xs font-bold transition-all ${activeWithdrawTab === tab
-                    ? 'bg-[#E8B84B] text-black'
-                    : 'text-gray-500 hover:text-gray-300'
-                    }`}
-                >
-                  {tab === 'normal' ? 'To My UPI' : 'Family Transfer'}
-                </button>
-              ))}
-            </div>
-
-            <input
-              type="number"
-              placeholder="Enter amount (Min ₹200)"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-black/50 border border-gray-800 rounded-xl px-4 py-3 sm:py-4 text-lg font-bold focus:outline-none focus:border-[#E8B84B] transition-all"
-            />
-
-            {/* My UPI display */}
-            {activeWithdrawTab === 'normal' && userData.upiId && (
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-black/50 rounded-xl border border-gray-800/50">
-                <CheckCircle size={14} className="text-[#00C9A7]" />
-                <span className="text-xs text-gray-400">Sending to: </span>
-                <span className="text-xs font-bold text-white">{userData.upiId}</span>
-              </div>
-            )}
-
-            {/* Family UPI input */}
-            <AnimatePresence>
-              {activeWithdrawTab === 'family' && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                >
-                  <input
-                    type="text"
-                    placeholder="Recipient UPI ID (e.g. name@upi)"
-                    value={upiId}
-                    onChange={(e) => setUpiId(e.target.value)}
-                    className="w-full bg-black/50 border border-gray-800 rounded-xl px-4 py-3 sm:py-4 text-sm focus:outline-none focus:border-[#E8B84B] transition-all"
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Error / Success */}
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm"
-                >
-                  <AlertCircle size={16} />
-                  {error}
-                </motion.div>
-              )}
-              {success && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-2 p-3 bg-[#00C9A7]/10 border border-[#00C9A7]/20 rounded-xl text-[#00C9A7] text-sm font-bold"
-                >
-                  <CheckCircle size={16} />
-                  Withdrawal request submitted! Processing within 24-48 hours.
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              onClick={() => handleWithdraw(activeWithdrawTab === 'normal' ? 'normal' : 'family_transfer')}
-              disabled={loading || !userData.kycDone}
-              className="w-full bg-[#E8B84B] text-black font-black py-3 sm:py-4 rounded-xl flex items-center justify-center gap-2 hover:bg-[#f0c55a] transition-all active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed shadow-[0_8px_20px_rgba(232,184,75,0.2)] text-sm sm:text-base"
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="bg-[#1A1A1A] w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 border border-gray-800"
+              onClick={(e) => e.stopPropagation()}
             >
-              {loading ? (
-                <Loader2 size={20} className="animate-spin" />
-              ) : activeWithdrawTab === 'family' ? (
-                <>
-                  <Send size={18} /> Send to Family
-                </>
+              <h3 className="text-xl font-black mb-4">Withdraw to UPI</h3>
+
+              {withdrawError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 mb-4">
+                  <p className="text-sm text-red-400">{withdrawError}</p>
+                </div>
+              )}
+
+              {!userData.kycDone ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+                  <p className="text-gray-400 mb-4">KYC verification required</p>
+                  <button
+                    onClick={() => setShowWithdrawForm(false)}
+                    className="bg-[#E8B84B] text-black font-bold px-6 py-3 rounded-xl"
+                  >
+                    Complete KYC
+                  </button>
+                </div>
               ) : (
                 <>
-                  <ArrowUpCircle size={18} /> Withdraw Now
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold mb-2">Amount (Rs.)</label>
+                      <input
+                        type="number"
+                        value={withdrawAmount}
+                        onChange={(e) => setWithdrawAmount(e.target.value)}
+                        placeholder="Enter amount (min Rs.200)"
+                        className="w-full bg-[#111111] border border-gray-800 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#E8B84B]/50"
+                      />
+                      <p className="text-xs text-gray-500 mt-2">
+                        Available: {formatCurrency(wallets.earned)} | Minimum: Rs.200
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold mb-2">UPI ID</label>
+                      <div className="bg-[#111111] border border-gray-800 rounded-xl px-4 py-3 flex items-center justify-between">
+                        <span className="text-white">{userData.upiId || 'Not set'}</span>
+                        <button className="text-[#E8B84B] text-sm font-bold">Edit</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 mt-6">
+                    <button
+                      onClick={() => setShowWithdrawForm(false)}
+                      className="flex-1 bg-gray-800 text-gray-400 font-bold py-3 rounded-xl hover:bg-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleWithdraw}
+                      className="flex-1 bg-[#E8B84B] text-black font-bold py-3 rounded-xl hover:bg-[#D4A743] transition-colors"
+                    >
+                      Submit Request
+                    </button>
+                  </div>
                 </>
               )}
-            </button>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Bonus Conversion Progress */}
-      <div className="bg-[#111111] p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-gray-800/50 space-y-3">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-purple-400" />
-            <span className="text-sm font-bold text-gray-300">Bonus → Earned Conversion</span>
-          </div>
-          <span className="text-xs font-bold text-purple-400">
-            ₹{userData.wallets?.bonus || 0} / ₹200
-          </span>
-        </div>
-        <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden">
+      {/* ===== BONUS CELEBRATION ===== */}
+      <AnimatePresence>
+        {showBonusCelebration && (
           <motion.div
-            className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full"
-            initial={{ width: 0 }}
-            animate={{ width: `${bonusToEarnedProgress}%` }}
-            transition={{ type: 'spring', damping: 20 }}
-          />
-        </div>
-        <p className="text-[10px] text-gray-600">
-          {canConvertBonus
-            ? 'Milestone reached! Convert your bonus to earned wallet.'
-            : `Earn ₹${200 - (userData.wallets?.bonus || 0)} more in bonus to unlock conversion.`}
-        </p>
-        {canConvertBonus && (
-          <button
-            onClick={handleConvertBonus}
-            disabled={loading}
-            className="w-full bg-purple-500/10 text-purple-400 border border-purple-500/30 font-bold py-3 rounded-xl text-sm flex items-center justify-center gap-2 hover:bg-purple-500/20 transition-all disabled:opacity-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
           >
-            <Sparkles size={16} /> Convert ₹{userData.wallets?.bonus} Bonus to Earned
-          </button>
-        )}
-      </div>
-
-      {/* Auto-Savings Slider */}
-      <div className="bg-[#111111] p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-gray-800/50 space-y-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <Banknote size={16} className="text-blue-400" />
-            <span className="text-sm font-bold text-gray-300">Auto-Save Percentage</span>
-          </div>
-          <span className="text-sm font-black text-blue-400">{savingsPercent}%</span>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={50}
-          step={5}
-          value={savingsPercent}
-          onChange={(e) => handleSavingsUpdate(Number(e.target.value))}
-          className="w-full accent-blue-400"
-        />
-        <div className="flex justify-between text-[10px] text-gray-600 font-bold">
-          <span>0%</span>
-          <span>25%</span>
-          <span>50%</span>
-        </div>
-        <p className="text-[10px] text-gray-600">
-          {savingsPercent > 0
-            ? `${savingsPercent}% of all future earnings will auto-save to your Savings wallet.`
-            : 'Set a percentage to auto-save from every earning.'}
-        </p>
-      </div>
-
-      {/* Transaction History */}
-      <div className="space-y-3">
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
-            Transaction History
-            <span className="text-[10px] bg-gray-800 px-2 py-0.5 rounded-full">{transactions.length}</span>
-          </h3>
-          <div className="flex gap-2">
-            {(['all', 'credit', 'debit'] as const).map((filter) => (
+            <motion.div
+              initial={{ scale: 0, rotate: -180 }}
+              animate={{ scale: 1, rotate: 0 }}
+              transition={{ type: 'spring', damping: 12 }}
+              className="text-center"
+            >
+              <div className="w-32 h-32 bg-[#A855F7]/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Zap className="w-16 h-16 text-[#A855F7]" />
+              </div>
+              <h2 className="text-3xl font-black text-white mb-2">Bonus Unlocked!</h2>
+              <p className="text-gray-400 mb-6">
+                Your Rs.{wallets.bonus} bonus has been moved to your earned wallet!
+              </p>
               <button
-                key={filter}
-                onClick={() => setTransactionFilter(filter)}
-                className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${transactionFilter === filter
-                  ? 'bg-[#E8B84B] text-black'
-                  : 'bg-gray-800 text-gray-500 hover:text-gray-300'
-                  }`}
+                onClick={() => setShowBonusCelebration(false)}
+                className="bg-[#A855F7] text-white font-bold px-8 py-4 rounded-2xl"
               >
-                {filter === 'all' ? 'All' : filter === 'credit' ? 'Income' : 'Expense'}
+                Claim Now
               </button>
-            ))}
-          </div>
-        </div>
-
-        {filteredTransactions.length === 0 ? (
-          <div className="p-8 bg-[#111111] rounded-2xl border border-dashed border-gray-800 text-center">
-            <div className="w-12 h-12 bg-gray-800/50 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Wallet className="text-gray-600" size={24} />
-            </div>
-            <p className="text-gray-600 text-sm italic">No transactions yet. Start earning!</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <AnimatePresence mode="popLayout">
-              {filteredTransactions.map((tx) => (
-                <motion.div
-                  key={tx.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="bg-[#111111] p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-gray-800/60 flex justify-between items-center hover:border-gray-700 transition-colors"
-                >
-                  <div className="min-w-0 flex-1 flex items-center gap-3">
-                    <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center shrink-0 ${tx.amount > 0 ? 'bg-[#00C9A7]/10' : 'bg-red-500/10'
-                      }`}>
-                      {tx.amount > 0 ? (
-                        <ArrowDownLeft size={16} className="text-[#00C9A7]" />
-                      ) : (
-                        <ArrowUpCircle size={16} className="text-red-400" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-bold text-sm text-white truncate">{tx.description}</p>
-                      <p className="text-[10px] text-gray-600 mt-0.5">
-                        {tx.createdAt
-                          ? new Date(tx.createdAt.seconds * 1000).toLocaleString('en-IN', {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                          : 'Processing...'}
-                      </p>
-                    </div>
-                  </div>
-                  <p
-                    className={`font-black text-base sm:text-lg ml-4 ${tx.amount > 0 ? 'text-[#00C9A7]' : 'text-red-400'
-                      }`}
-                  >
-                    {tx.amount > 0 ? '+' : ''}₹{Math.abs(tx.amount).toLocaleString()}
-                  </p>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
+            </motion.div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   );
 }

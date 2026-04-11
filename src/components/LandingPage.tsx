@@ -18,6 +18,7 @@ interface LandingPageProps {
   handlePhoneSignIn?: (phoneNumber: string) => void;
   verifyOtp?: (otp: string) => void;
   setPhoneAuthStep?: (step: string) => void;
+  onShowPhoneAuth?: () => void;
 }
 
 export default function LandingPage({
@@ -25,7 +26,8 @@ export default function LandingPage({
   phoneAuthStep,
   handlePhoneSignIn,
   verifyOtp,
-  setPhoneAuthStep
+  setPhoneAuthStep,
+  onShowPhoneAuth
 }: LandingPageProps) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
@@ -89,7 +91,7 @@ export default function LandingPage({
                 Testimonials
               </button>
               <button
-                onClick={() => setShowAuthModal(true)}
+                onClick={() => onShowPhoneAuth ? onShowPhoneAuth() : setShowAuthModal(true)}
                 className="bg-[#E8B84B] hover:bg-[#D4A743] text-black px-6 py-2 rounded-full font-bold text-sm transition-colors"
               >
                 Sign In
@@ -99,7 +101,7 @@ export default function LandingPage({
             {/* Mobile Menu Button */}
             <div className="md:hidden flex items-center gap-3">
               <button
-                onClick={() => setShowAuthModal(true)}
+                onClick={() => onShowPhoneAuth ? onShowPhoneAuth() : setShowAuthModal(true)}
                 className="bg-[#E8B84B] text-black px-4 py-2 rounded-full font-bold text-sm"
               >
                 Login
@@ -169,7 +171,7 @@ export default function LandingPage({
               {/* CTA Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center lg:justify-start mb-6 sm:mb-8">
                 <button
-                  onClick={() => setShowAuthModal(true)}
+                  onClick={() => onShowPhoneAuth ? onShowPhoneAuth() : setShowAuthModal(true)}
                   className="bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black px-6 sm:px-8 py-3 sm:py-4 rounded-2xl font-bold text-base sm:text-lg flex items-center justify-center gap-2 hover:scale-105 transition-transform"
                 >
                   <Rocket className="w-5 h-5" />
@@ -415,7 +417,7 @@ export default function LandingPage({
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black mb-6">Ready to Start Earning?</h2>
           <p className="text-xl text-gray-400 mb-8">Join thousands of professionals already earning on WorkPlex</p>
           <button
-            onClick={() => setShowAuthModal(true)}
+            onClick={() => onShowPhoneAuth ? onShowPhoneAuth() : setShowAuthModal(true)}
             className="bg-gradient-to-r from-[#E8B84B] to-[#F5D08A] text-black px-12 py-5 rounded-2xl font-black text-xl hover:scale-105 transition-transform"
           >
             Get Started Now

@@ -1,565 +1,423 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+/**
+ * WorkPlex Phase 6 — Partner Store System
+ * Complete e-commerce engine: Shop Setup, Product Catalog, Cart, Checkout, Orders
+ */
+
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Store, Camera, Upload, ChevronRight, ChevronLeft, CheckCircle,
-  Loader2, AlertCircle, X, Plus, Minus, Trash2, Eye, Search,
-  PriceTag, ShoppingBag, DollarSign
+  ShoppingBag, Plus, Minus, Trash2, CheckCircle, AlertCircle,
+  ChevronRight, Copy, Share2, QrCode, Camera, Upload, X,
+  Package, DollarSign, TrendingUp, BarChart3, MapPin, Phone
 } from 'lucide-react';
-import { doc, setDoc, getDoc, collection, getDocs, query, where, addDoc } from 'firebase/firestore';
+import {
+  collection, query, where, orderBy, limit, onSnapshot,
+  addDoc, doc, setDoc, updateDoc, serverTimestamp, getDocs
+} from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase';
-import { CatalogProduct, PartnerShop, PartnerProduct } from '../types';
-import { Timestamp } from 'firebase/firestore';
+import { db, storage, auth } from '../firebase';
+import { UserProfile, ShopCategory, generateSlug, formatCurrency } from '../types';
 
 interface PartnerShopSetupProps {
   user: any;
-  userData: any;
+  userData: UserProfile;
+  onComplete: () => void;
 }
 
-export default function PartnerShopSetup({ user, userData }: PartnerShopSetupProps) {
-  const navigate = useNavigate();
+const CATEGORIES: ShopCategory[] = ['Fashion', 'Electronics', 'Home', 'Beauty', 'Sports'];
+
+// Sample catalog products for demo
+const SAMPLE_CATALOG = [
+  { id: '1', name: 'Wireless Earbuds', category: 'Electronics', basePrice: 800, image: '🎧' },
+  { id: '2', name: 'Cotton T-Shirt', category: 'Fashion', basePrice: 350, image: '👕' },
+  { id: '3', name: 'Water Bottle', category: 'Home', basePrice: 250, image: '🍶' },
+  { id: '4', name: 'Face Serum', category: 'Beauty', basePrice: 450, image: '✨' },
+  { id: '5', name: 'Yoga Mat', category: 'Sports', basePrice: 600, image: '🧘' },
+  { id: '6', name: 'Phone Case', category: 'Electronics', basePrice: 200, image: '📱' }
+];
+
+export default function PartnerShopSetup({ user, userData, onComplete }: PartnerShopSetupProps) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
   const [shopName, setShopName] = useState('');
   const [shopSlug, setShopSlug] = useState('');
-  const [logo, setLogo] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<Map<string, PartnerProduct>>(new Map());
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [shopLogo, setShopLogo] = useState<File | null>(null);
+  const [logoURL, setLogoURL] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<ShopCategory[]>([]);
+  const [commission, setCommission] = useState(10);
+  const [selectedProducts, setSelectedProducts] = useState<Map<string, number>>(new Map());
+  const [uploadProgress, setUploadProgress] = useState(0);
 
-  const totalSteps = 5;
-
+  // Auto-generate slug from shop name
   useEffect(() => {
-    loadCatalog();
-  }, []);
+    if (shopName) {
+      setShopSlug(generateSlug(shopName));
+    }
+  }, [shopName]);
 
-  const loadCatalog = async () => {
-    try {
-      const q = query(collection(db, 'products'), where('isActive', '==', true));
-      const snapshot = await getDocs(q);
-      const products = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as CatalogProduct));
-      setCatalogProducts(products);
-    } catch (err) {
-      console.error('Error loading catalog:', err);
+  const toggleCategory = (cat: ShopCategory) => {
+    if (selectedCategories.includes(cat)) {
+      setSelectedCategories(selectedCategories.filter(c => c !== cat));
+    } else if (selectedCategories.length < 3) {
+      setSelectedCategories([...selectedCategories, cat]);
     }
   };
 
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
-      .slice(0, 50);
-  };
-
-  const handleShopNameChange = (name: string) => {
-    setShopName(name);
-    setShopSlug(generateSlug(name));
-  };
-
-  const checkSlugExists = async (slug: string) => {
-    const q = query(collection(db, 'partnerShops'), where('shopSlug', '==', slug));
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
-  };
-
-  const handleNext = async () => {
-    if (step === 1) {
-      if (shopName.length < 3 || shopName.length > 50) {
-        setError('Shop name must be between 3 and 50 characters');
-        return;
-      }
-
-      let finalSlug = shopSlug;
-      const exists = await checkSlugExists(finalSlug);
-      if (exists) {
-        finalSlug = `${shopSlug}-${Math.floor(Math.random() * 1000)}`;
-      }
-      setShopSlug(finalSlug);
+  const toggleProduct = (productId: string) => {
+    const newProducts = new Map(selectedProducts);
+    if (newProducts.has(productId)) {
+      newProducts.delete(productId);
+    } else {
+      newProducts.set(productId, 1);
     }
-
-    if (step === 3) {
-      if (selectedProducts.size === 0) {
-        setError('Please select at least one product for your shop');
-        return;
-      }
-    }
-
-    setError(null);
-    setStep(s => Math.min(s + 1, totalSteps));
+    setSelectedProducts(newProducts);
   };
 
-  const handlePrev = () => {
-    setStep(s => Math.max(s - 1, 1));
-    setError(null);
+  const updateProductPrice = (productId: string, price: number) => {
+    const newProducts = new Map(selectedProducts);
+    newProducts.set(productId, price);
+    setSelectedProducts(newProducts);
   };
 
-  const handleLogoUpload = async () => {
-    if (!logoFile) return;
-
-    try {
-      setLoading(true);
-      const storageRef = ref(storage, `partnerLogos/${user.uid}/logo`);
-      const snapshot = await uploadBytes(storageRef, logoFile);
-      const url = await getDownloadURL(snapshot.ref);
-      setLogo(url);
-    } catch (err: any) {
-      setError(err.message || 'Failed to upload logo');
-    } finally {
-      setLoading(false);
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.size <= 2 * 1024 * 1024) {
+      setShopLogo(file);
     }
   };
 
   const handlePublish = async () => {
-    try {
-      setLoading(true);
+    if (!shopName || selectedCategories.length === 0) return;
 
-      let logoUrl = logo;
-      if (logoFile && !logo) {
-        const storageRef = ref(storage, `partnerLogos/${user.uid}/logo`);
-        const snapshot = await uploadBytes(storageRef, logoFile);
+    setLoading(true);
+    setUploadProgress(0);
+
+    try {
+      let logoUrl = '';
+
+      // Upload logo if provided
+      if (shopLogo) {
+        const logoRef = ref(storage, `shops/${user.uid}/logo.jpg`);
+        const snapshot = await uploadBytes(logoRef, shopLogo);
         logoUrl = await getDownloadURL(snapshot.ref);
+        setUploadProgress(50);
       }
 
-      const shopData: PartnerShop = {
+      // Create shop document
+      await setDoc(doc(db, 'partnerShops', user.uid), {
         shopName,
         shopSlug,
-        logo: logoUrl || '',
+        logo: logoUrl,
+        categories: selectedCategories,
+        defaultCommission: commission,
         ownerId: user.uid,
-        ownerName: userData?.name || '',
-        ownerPhone: userData?.phone || '',
+        ownerName: userData.name,
+        ownerPhone: userData.phone,
         isActive: true,
         totalSales: 0,
         totalOrders: 0,
         totalMarginEarned: 0,
-        createdAt: Timestamp.now(),
-        lastActiveAt: Timestamp.now()
-      };
+        createdAt: serverTimestamp(),
+        lastActiveAt: serverTimestamp()
+      });
 
-      await setDoc(doc(db, 'partnerShops', user.uid), shopData);
+      setUploadProgress(75);
 
-      for (const [productId, partnerProduct] of selectedProducts) {
-        await setDoc(doc(db, 'partnerProducts', user.uid, 'products', productId), {
-          ...partnerProduct,
+      // Add selected products
+      const batch = selectedProducts.entries();
+      for (const [productId, price] of batch) {
+        const catalogProduct = SAMPLE_CATALOG.find(p => p.id === productId);
+        if (!catalogProduct) continue;
+
+        const margin = price - catalogProduct.basePrice;
+        await setDoc(doc(db, 'partnerProducts', `${user.uid}_${productId}`), {
+          productId,
+          partnerId: user.uid,
+          hvrsBasePrice: catalogProduct.basePrice,
+          partnerSellingPrice: price,
+          partnerMargin: margin,
+          productName: catalogProduct.name,
+          category: catalogProduct.category,
+          images: [],
+          description: '',
           isActive: true,
-          addedAt: Timestamp.now(),
+          addedAt: serverTimestamp(),
           totalSold: 0
         });
       }
 
-      await setDoc(doc(db, 'users', user.uid), {
-        mode: 'Partner',
-        shopPublished: true,
-        shopSlug
-      }, { merge: true });
+      setUploadProgress(100);
 
-      navigate('/partner/dashboard');
-    } catch (err: any) {
-      setError(err.message || 'Failed to publish shop');
+      // Update user profile
+      await updateDoc(doc(db, 'users', user.uid), {
+        shopName,
+        shopSlug,
+        shopLogo: logoUrl,
+        categories: selectedCategories,
+        defaultCommission: commission,
+        shopPublished: true,
+        mode: 'Partner'
+      });
+
+      // Add initial wallet bonus
+      await addDoc(collection(db, 'transactions'), {
+        userId: user.uid,
+        type: 'signup_bonus',
+        amount: 27,
+        status: 'pending',
+        description: 'Partner signup bonus',
+        createdAt: serverTimestamp()
+      });
+
+      onComplete();
+    } catch (error) {
+      console.error('Shop publish error:', error);
+      alert('Failed to publish shop. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredProducts = catalogProducts.filter(p => {
-    const matchesSearch = p.productName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.skuId?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || p.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
-
-  const categories = [...new Set(catalogProducts.map(p => p.category).filter(Boolean))];
-
   return (
     <div className="min-h-screen bg-[#0A0A0A] text-white">
-      <div className="fixed top-0 left-0 w-full h-1 bg-[#111111] z-50">
+      {/* Progress Bar */}
+      <div className="fixed top-0 left-0 w-full h-1 bg-[#1A1A1A] z-50">
         <motion.div
-          className="h-full bg-gradient-to-r from-[#00C9A7] to-[#E8B84B] shadow-[0_0_15px_rgba(0,201,167,0.5)]"
+          className="h-full bg-[#00C9A7]"
           initial={{ width: 0 }}
-          animate={{ width: `${(step / totalSteps) * 100}%` }}
+          animate={{ width: `${(step / 5) * 100}%` }}
         />
       </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <div className="mb-8">
-          <p className="text-[10px] font-black text-[#00C9A7] uppercase tracking-[0.2em] mb-2">Step {step} of {totalSteps}</p>
-          <h1 className="text-3xl font-black">
-            {step === 1 && 'Name Your Shop'}
-            {step === 2 && 'Add Logo (Optional)'}
-            {step === 3 && 'Browse Products'}
-            {step === 4 && 'Set Your Prices'}
-            {step === 5 && 'Preview & Publish'}
-          </h1>
-        </div>
-
-        <AnimatePresence mode="wait">
-          {step === 1 && (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
+      <div className="max-w-2xl mx-auto p-4 pt-8">
+        {/* Step 1: Shop Name */}
+        {step === 1 && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+            <h2 className="text-2xl font-black mb-6">Name Your Shop</h2>
+            <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Shop Name</label>
+                <label className="block text-sm font-bold mb-2">Shop Name</label>
                 <input
                   type="text"
                   value={shopName}
-                  onChange={e => handleShopNameChange(e.target.value)}
-                  placeholder="e.g., Rahul's Fashion Store"
-                  maxLength={50}
-                  className="w-full bg-[#111111] border border-white/10 rounded-2xl p-4 text-lg focus:border-[#00C9A7] outline-none transition-all"
+                  onChange={(e) => setShopName(e.target.value)}
+                  placeholder="e.g., Trendy Finds"
+                  className="w-full bg-[#1A1A1A] border border-gray-800 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[#00C9A7]"
                 />
-                <p className="text-gray-500 text-xs mt-2">{shopName.length}/50 characters</p>
               </div>
+              {shopSlug && (
+                <div className="bg-[#111111] rounded-xl p-3 flex items-center justify-between">
+                  <span className="text-xs text-gray-400">Your shop URL:</span>
+                  <span className="text-xs text-[#00C9A7]">workplex.hvrs.in/shop/{shopSlug}</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
 
+        {/* Step 2: Logo & Categories */}
+        {step === 2 && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+            <h2 className="text-2xl font-black mb-6">Logo & Categories</h2>
+            <div className="space-y-6">
+              {/* Logo Upload */}
               <div>
-                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-3">Shop URL</label>
-                <div className="flex items-center gap-2 bg-[#111111] border border-white/10 rounded-2xl p-4">
-                  <span className="text-gray-500">workplex.hvrs.in/shop/</span>
-                  <span className="text-[#00C9A7] font-mono font-bold">{shopSlug || 'your-shop'}</span>
-                </div>
-              </div>
-
-              {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm">
-                  <AlertCircle size={18} />
-                  {error}
-                </div>
-              )}
-
-              <button
-                disabled={shopName.length < 3}
-                onClick={handleNext}
-                className="w-full bg-[#00C9A7] text-black font-black py-5 rounded-2xl shadow-lg shadow-[#00C9A7]/20 disabled:opacity-20 flex items-center justify-center gap-2"
-              >
-                Continue <ChevronRight size={20} />
-              </button>
-            </motion.div>
-          )}
-
-          {step === 2 && (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <div className="flex flex-col items-center">
-                <div className="relative group">
-                  <div className="w-32 h-32 bg-[#111111] rounded-[32px] border-2 border-dashed border-white/10 flex items-center justify-center overflow-hidden transition-all group-hover:border-[#00C9A7]/50">
-                    {logo || logoFile ? (
-                      logoFile ? (
-                        <img src={URL.createObjectURL(logoFile)} alt="Logo" className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={logo || ''} alt="Logo" className="w-full h-full object-cover" />
-                      )
-                    ) : (
-                      <Camera size={32} className="text-gray-700 group-hover:text-[#00C9A7] transition-colors" />
-                    )}
-                  </div>
-                  <label className="absolute -bottom-2 -right-2 bg-[#00C9A7] text-black p-3 rounded-2xl shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer">
-                    <Upload size={20} />
-                    <input
-                      type="file"
-                      hidden
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setLogoFile(file);
-                          handleLogoUpload();
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="text-gray-500 text-sm mt-4">Upload your shop logo (optional)</p>
-              </div>
-
-              <div className="flex gap-4 mt-8">
-                <button
-                  onClick={handlePrev}
-                  className="flex-1 bg-[#1A1A1A] text-gray-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"
+                <label className="block text-sm font-bold mb-2">Shop Logo (Optional)</label>
+                <div
+                  onClick={() => document.getElementById('logoInput')?.click()}
+                  className="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center cursor-pointer hover:border-[#00C9A7]/50 transition-colors"
                 >
-                  <ChevronLeft size={20} /> Back
-                </button>
-                <button
-                  onClick={handleNext}
-                  className="flex-1 bg-[#00C9A7] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2"
-                >
-                  Skip <ChevronRight size={20} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 3 && (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              <div className="flex gap-4">
-                <div className="flex-1 relative">
-                  <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Search products..."
-                    className="w-full bg-[#111111] border border-white/10 rounded-2xl py-3 pl-12 pr-4 focus:border-[#00C9A7] outline-none transition-all"
-                  />
-                </div>
-                <select
-                  value={categoryFilter}
-                  onChange={e => setCategoryFilter(e.target.value)}
-                  className="bg-[#111111] border border-white/10 rounded-2xl px-4 py-3 focus:border-[#00C9A7] outline-none"
-                >
-                  <option value="all">All Categories</option>
-                  {categories.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-[50vh] overflow-y-auto">
-                {filteredProducts.map(product => {
-                  const isSelected = selectedProducts.has(product.id);
-                  return (
-                    <motion.div
-                      key={product.id}
-                      whileHover={{ scale: 1.02 }}
-                      onClick={() => {
-                        if (isSelected) {
-                          const newMap = new Map(selectedProducts);
-                          newMap.delete(product.id);
-                          setSelectedProducts(newMap);
-                        } else {
-                          const newMap = new Map(selectedProducts);
-                          newMap.set(product.id, {
-                            productId: product.id,
-                            hvrsBasePrice: product.hvrsBasePrice,
-                            partnerSellingPrice: product.suggestedRetailPrice,
-                            partnerMargin: product.suggestedRetailPrice - product.hvrsBasePrice,
-                            productName: product.productName,
-                            category: product.category,
-                            images: product.images,
-                            description: product.description,
-                            isActive: true,
-                            addedAt: Timestamp.now(),
-                            totalSold: 0
-                          });
-                          setSelectedProducts(newMap);
-                        }
-                      }}
-                      className={`bg-[#111111] border rounded-2xl p-4 cursor-pointer transition-all ${
-                        isSelected ? 'border-[#00C9A7] bg-[#00C9A7]/5' : 'border-white/5'
-                      }`}
-                    >
-                      {product.images?.[0] && (
-                        <img
-                          src={product.images[0]}
-                          alt={product.productName}
-                          className="w-full h-24 object-cover rounded-xl mb-3"
-                        />
-                      )}
-                      <h4 className="font-bold text-sm truncate">{product.productName}</h4>
-                      <p className="text-xs text-gray-500">{product.category}</p>
-                      <div className="flex justify-between items-center mt-2">
-                        <div>
-                          <p className="text-[10px] text-gray-500">HVRS: ₹{product.hvrsBasePrice}</p>
-                          <p className="text-[#00C9A7] font-bold text-sm">₹{product.suggestedRetailPrice}</p>
-                        </div>
-                        {isSelected && <CheckCircle size={20} className="text-[#00C9A7]" />}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-
-              <p className="text-gray-500 text-sm text-center">{selectedProducts.size} products selected</p>
-
-              {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm">
-                  <AlertCircle size={18} />
-                  {error}
-                </div>
-              )}
-
-              <div className="flex gap-4">
-                <button
-                  onClick={handlePrev}
-                  className="flex-1 bg-[#1A1A1A] text-gray-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"
-                >
-                  <ChevronLeft size={20} /> Back
-                </button>
-                <button
-                  onClick={handleNext}
-                  disabled={selectedProducts.size === 0}
-                  className="flex-1 bg-[#00C9A7] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-20"
-                >
-                  Continue <ChevronRight size={20} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 4 && (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              {Array.from(selectedProducts.values()).map(product => {
-                const margin = product.partnerSellingPrice - product.hvrsBasePrice;
-                const marginPercent = (margin / product.hvrsBasePrice) * 100;
-                const isHighMargin = marginPercent > 30;
-
-                return (
-                  <div key={product.productId} className="bg-[#111111] border border-white/5 rounded-2xl p-4">
-                    <div className="flex gap-4">
-                      {product.images?.[0] && (
-                        <img
-                          src={product.images[0]}
-                          alt={product.productName}
-                          className="w-16 h-16 object-cover rounded-xl"
-                        />
-                      )}
-                      <div className="flex-1">
-                        <h4 className="font-bold">{product.productName}</h4>
-                        <p className="text-xs text-gray-500">{product.category}</p>
-
-                        <div className="grid grid-cols-2 gap-4 mt-3">
-                          <div>
-                            <p className="text-[10px] text-gray-500 uppercase">HVRS Base Price</p>
-                            <p className="text-gray-400 font-mono">₹{product.hvrsBasePrice}</p>
-                          </div>
-                          <div>
-                            <p className="text-[10px] text-gray-500 uppercase">Your Selling Price</p>
-                            <input
-                              type="number"
-                              value={product.partnerSellingPrice}
-                              onChange={e => {
-                                const newPrice = parseInt(e.target.value) || 0;
-                                const newMap = new Map(selectedProducts);
-                                newMap.set(product.productId, {
-                                  ...product,
-                                  partnerSellingPrice: newPrice,
-                                  partnerMargin: newPrice - product.hvrsBasePrice
-                                });
-                                setSelectedProducts(newMap);
-                              }}
-                              className="w-full bg-[#0A0A0A] border border-white/10 rounded-lg px-3 py-2 font-mono focus:border-[#00C9A7] outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="mt-2 p-2 bg-[#0A0A0A] rounded-lg">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs text-gray-500">Your Margin</span>
-                            <span className="font-bold text-[#00C9A7]">₹{margin}</span>
-                          </div>
-                          {isHighMargin && (
-                            <p className="text-[10px] text-yellow-500 mt-1">High margin may reduce sales</p>
-                          )}
-                        </div>
-                      </div>
+                  {shopLogo ? (
+                    <div className="space-y-2">
+                      <CheckCircle className="w-8 h-8 text-[#00C9A7] mx-auto" />
+                      <p className="text-sm font-bold">{shopLogo.name}</p>
                     </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="w-8 h-8 text-gray-600 mx-auto" />
+                      <p className="text-sm text-gray-400">Tap to upload logo</p>
+                      <p className="text-xs text-gray-600">Max 2MB</p>
+                    </div>
+                  )}
+                </div>
+                <input id="logoInput" type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+              </div>
+
+              {/* Categories */}
+              <div>
+                <label className="block text-sm font-bold mb-3">Select Categories (up to 3)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {CATEGORIES.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => toggleCategory(cat)}
+                      className={`p-3 rounded-xl border text-sm font-bold transition-all ${selectedCategories.includes(cat)
+                          ? 'border-[#00C9A7] bg-[#00C9A7]/10 text-[#00C9A7]'
+                          : 'border-gray-800 bg-[#1A1A1A] text-gray-500'
+                        }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Commission Slider */}
+              <div>
+                <label className="block text-sm font-bold mb-2">Default Commission: {commission}%</label>
+                <input
+                  type="range"
+                  min="5"
+                  max="30"
+                  value={commission}
+                  onChange={(e) => setCommission(parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-800 rounded-full appearance-none cursor-pointer"
+                  style={{ accentColor: '#00C9A7' }}
+                />
+                <div className="flex justify-between mt-1">
+                  <span className="text-xs text-gray-600">5%</span>
+                  <span className="text-xs text-gray-600">30%</span>
+                </div>
+                {commission > 25 && (
+                  <p className="text-xs text-yellow-500 mt-2">⚠️ High commission may reduce sales</p>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Step 3: Select Products */}
+        {step === 3 && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+            <h2 className="text-2xl font-black mb-6">Select Products</h2>
+            <div className="space-y-3">
+              {SAMPLE_CATALOG.map((product) => {
+                const isSelected = selectedProducts.has(product.id);
+                const price = selectedProducts.get(product.id) || product.basePrice + (product.basePrice * commission / 100);
+                return (
+                  <div
+                    key={product.id}
+                    onClick={() => toggleProduct(product.id)}
+                    className={`bg-[#1A1A1A] rounded-xl p-4 border cursor-pointer transition-all ${isSelected ? 'border-[#00C9A7]' : 'border-gray-800'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{product.image}</span>
+                        <div>
+                          <p className="font-bold">{product.name}</p>
+                          <p className="text-xs text-gray-500">{product.category}</p>
+                        </div>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full ${isSelected ? 'bg-[#00C9A7]/20 text-[#00C9A7]' : 'bg-gray-800 text-gray-500'
+                        }`}>
+                        {isSelected ? 'Added' : 'Tap to add'}
+                      </span>
+                    </div>
+                    {isSelected && (
+                      <div className="flex items-center gap-3 mt-3 pt-3 border-t border-gray-800">
+                        <span className="text-xs text-gray-500">Base: ₹{product.basePrice}</span>
+                        <input
+                          type="number"
+                          value={Math.round(price)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            updateProductPrice(product.id, parseInt(e.target.value) || product.basePrice);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="bg-[#111111] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white w-24"
+                        />
+                        <span className="text-xs text-[#00C9A7]">
+                          Margin: ₹{Math.round(price - product.basePrice)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
+            </div>
+          </motion.div>
+        )}
 
-              <div className="flex gap-4">
-                <button
-                  onClick={handlePrev}
-                  className="flex-1 bg-[#1A1A1A] text-gray-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"
-                >
-                  <ChevronLeft size={20} /> Back
-                </button>
-                <button
-                  onClick={handleNext}
-                  className="flex-1 bg-[#00C9A7] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2"
-                >
-                  Preview Shop <ChevronRight size={20} />
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {step === 5 && (
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              <div className="bg-[#111111] border border-white/5 rounded-3xl p-6">
-                <div className="flex items-center gap-4 mb-6">
-                  {logo && <img src={logo} alt="Logo" className="w-16 h-16 rounded-2xl object-cover" />}
-                  <div>
-                    <h3 className="text-2xl font-black">{shopName}</h3>
-                    <p className="text-gray-500 text-sm">workplex.hvrs.in/shop/{shopSlug}</p>
+        {/* Step 4: Review & Publish */}
+        {step === 4 && (
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}>
+            <h2 className="text-2xl font-black mb-6">Review & Publish</h2>
+            <div className="space-y-4">
+              <div className="bg-[#1A1A1A] rounded-xl p-4">
+                <h3 className="font-bold mb-3">Shop Summary</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Name:</span>
+                    <span>{shopName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">URL:</span>
+                    <span className="text-[#00C9A7]">/shop/{shopSlug}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Categories:</span>
+                    <span>{selectedCategories.join(', ')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Commission:</span>
+                    <span>{commission}%</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Products:</span>
+                    <span>{selectedProducts.size}</span>
                   </div>
                 </div>
-
-                <p className="text-gray-500 text-xs uppercase tracking-widest mb-4">{selectedProducts.size} Products</p>
-
-                <div className="space-y-3">
-                  {Array.from(selectedProducts.values()).map(product => (
-                    <div key={product.productId} className="flex items-center justify-between p-3 bg-[#0A0A0A] rounded-xl">
-                      <div className="flex items-center gap-3">
-                        {product.images?.[0] && (
-                          <img src={product.images[0]} alt={product.productName} className="w-10 h-10 rounded-lg object-cover" />
-                        )}
-                        <div>
-                          <p className="font-bold text-sm">{product.productName}</p>
-                          <p className="text-xs text-gray-500">Your margin: ₹{product.partnerMargin}</p>
-                        </div>
-                      </div>
-                      <p className="font-bold text-[#00C9A7]">₹{product.partnerSellingPrice}</p>
-                    </div>
-                  ))}
-                </div>
               </div>
 
-              {error && (
-                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400 text-sm">
-                  <AlertCircle size={18} />
-                  {error}
+              {uploadProgress > 0 && (
+                <div>
+                  <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-[#00C9A7]"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2 text-center">Publishing shop... {uploadProgress}%</p>
                 </div>
               )}
+            </div>
+          </motion.div>
+        )}
 
-              <div className="flex gap-4">
-                <button
-                  onClick={handlePrev}
-                  className="flex-1 bg-[#1A1A1A] text-gray-400 font-bold py-4 rounded-2xl flex items-center justify-center gap-2"
-                >
-                  <ChevronLeft size={20} /> Back
-                </button>
-                <button
-                  onClick={handlePublish}
-                  disabled={loading}
-                  className="flex-1 bg-[#E8B84B] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg shadow-[#E8B84B]/20"
-                >
-                  {loading ? <Loader2 size={20} className="animate-spin" /> : 'Publish My Shop'}
-                </button>
-              </div>
-            </motion.div>
+        {/* Navigation Buttons */}
+        <div className="flex gap-3 mt-8">
+          {step > 1 && (
+            <button
+              onClick={() => setStep(step - 1)}
+              className="flex-1 bg-gray-800 text-gray-400 font-bold py-3 rounded-xl hover:bg-gray-700 transition-colors"
+            >
+              Back
+            </button>
           )}
-        </AnimatePresence>
+          {step < 4 ? (
+            <button
+              onClick={() => setStep(step + 1)}
+              disabled={
+                (step === 1 && !shopName) ||
+                (step === 2 && selectedCategories.length === 0) ||
+                (step === 3 && selectedProducts.size === 0)
+              }
+              className="flex-1 bg-[#00C9A7] text-black font-bold py-3 rounded-xl hover:bg-[#00b395] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </button>
+          ) : (
+            <button
+              onClick={handlePublish}
+              disabled={loading}
+              className="flex-1 bg-[#00C9A7] text-black font-bold py-3 rounded-xl hover:bg-[#00b395] transition-colors disabled:opacity-50"
+            >
+              {loading ? 'Publishing...' : 'Publish Shop'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,453 +1,620 @@
 /**
- * WorkPlex — Enhanced Tasks Screen
- * Better task cards, filters, submission flow, and empty states
+ * WorkPlex Phase 3 — Complete Task System + Proof Submission (Promoters Only)
+ * Full task management with tabs, proof upload to Firebase Storage, real-time listeners,
+ * rejection/resubmission handling, earning credit on approval, and cross-venture tasks.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import {
-  ListTodo,
-  Clock,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Loader2,
-  Upload,
-  Link,
-  FileText,
-  ChevronRight,
-  Flame,
-  X,
-  Image as ImageIcon,
-  Search,
-  Filter,
-  Star,
-  Zap,
-  Calendar,
+  ListTodo, Clock, CheckCircle, XCircle, AlertCircle,
+  Upload, Image as ImageIcon, Link as LinkIcon, FileText,
+  ChevronRight, ArrowLeft, Zap, Search, AlertTriangle,
+  X, ExternalLink, RotateCcw, Award, Timer
 } from 'lucide-react';
 import {
-  collection,
-  query,
-  where,
-  orderBy,
-  limit,
-  onSnapshot,
-  addDoc,
-  updateDoc,
-  doc,
-  serverTimestamp,
-  getDocs,
+  collection, query, where, orderBy, limit, onSnapshot,
+  addDoc, doc, serverTimestamp, Timestamp, DocumentData,
+  QuerySnapshot, updateDoc, getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from '../firebase';
-import { UserData, OperationType, handleFirestoreError, TaskData } from '../types';
-import { User as FirebaseUser } from 'firebase/auth';
-import type { FirebaseUser as FirebaseUserType } from '../types';
+import { db, storage, auth } from '../firebase';
+import {
+  UserProfile, Task, TaskSubmission, TaskProofType,
+  VENTURES, Venture, UserRole
+} from '../types';
+
+// ============================================================
+// Types
+// ============================================================
+
+interface TasksScreenProps {
+  user: any;
+  userData: UserProfile;
+  onBack: () => void;
+}
 
 type TabType = 'all' | 'pending' | 'submitted' | 'approved' | 'rejected';
 
-const STATUS_CONFIG: Record<string, { color: string, bg: string, border: string, label: string }> = {
-  assigned: { color: 'text-[#E8B84B]', bg: 'bg-[#E8B84B]/10', border: 'border-[#E8B84B]/20', label: 'Available' },
-  accepted: { color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', label: 'In Progress' },
-  submitted: { color: 'text-purple-400', bg: 'bg-purple-400/10', border: 'border-purple-400/20', label: 'Submitted' },
-  completed: { color: 'text-[#00C9A7]', bg: 'bg-[#00C9A7]/10', border: 'border-[#00C9A7]/20', label: 'Completed' },
-  approved: { color: 'text-[#00C9A7]', bg: 'bg-[#00C9A7]/10', border: 'border-[#00C9A7]/20', label: 'Approved' },
-  skipped: { color: 'text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/20', label: 'Skipped' },
-  rejected: { color: 'text-red-400', bg: 'bg-red-400/10', border: 'border-red-400/20', label: 'Rejected' },
-};
-
-const DIFFICULTY_CONFIG: Record<string, { color: string, icon: React.ReactNode }> = {
-  Easy: { color: 'text-[#00C9A7]', icon: <Star size={12} className="text-[#00C9A7]" /> },
-  Medium: { color: 'text-[#E8B84B]', icon: <Zap size={12} className="text-[#E8B84B]" /> },
-  Hard: { color: 'text-red-400', icon: <Flame size={12} className="text-red-400" /> },
-};
-
-interface Task {
+interface TaskDoc extends DocumentData {
   id: string;
   title: string;
-  description?: string;
-  instructions?: string;
+  description: string;
+  venture: Venture;
+  role: UserRole[];
   earnAmount: number;
-  earning?: number;
-  difficulty?: 'Easy' | 'Medium' | 'Hard';
-  deadline?: any;
-  status?: string;
-  venture?: string;
-  type?: string;
-  submissionCount?: number;
+  deadline: Timestamp;
+  proofType: TaskProofType;
+  assignedTo: string[] | 'all';
+  status: string;
+  isCrossVenture: boolean;
+  isMystery: boolean;
+  instructions?: string;
+  proofRequirements?: string;
+  createdAt: Timestamp;
 }
 
-interface TaskDetailModalProps {
-  task: Task;
-  userId: string;
-  userName: string;
-  onClose: () => void;
-  onSuccess?: () => void;
+interface SubmissionDoc extends DocumentData {
+  id: string;
+  taskId: string;
+  workerId: string;
+  proofUrl?: string;
+  proofText?: string;
+  proofLink?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: Timestamp;
+  reviewedAt?: Timestamp;
+  rejectionReason?: string;
+  resubmissionCount: number;
+  earnAmount: number;
 }
 
-function TaskDetailModal({ task, userId, userName, onClose, onSuccess }: TaskDetailModalProps) {
-  const [proofLink, setProofLink] = useState('');
-  const [proofNote, setProofNote] = useState('');
+// ============================================================
+// Constants
+// ============================================================
+
+const TABS: { key: TabType; label: string; icon: React.ReactNode; color: string; activeBg: string }[] = [
+  { key: 'all', label: 'All', icon: <ListTodo className="w-3.5 h-3.5" />, color: '#E8B84B', activeBg: '#E8B84B' },
+  { key: 'pending', label: 'Pending', icon: <Clock className="w-3.5 h-3.5" />, color: '#F59E0B', activeBg: '#F59E0B' },
+  { key: 'submitted', label: 'Submitted', icon: <ExternalLink className="w-3.5 h-3.5" />, color: '#3B82F6', activeBg: '#3B82F6' },
+  { key: 'approved', label: 'Approved', icon: <CheckCircle className="w-3.5 h-3.5" />, color: '#00C9A7', activeBg: '#00C9A7' },
+  { key: 'rejected', label: 'Rejected', icon: <XCircle className="w-3.5 h-3.5" />, color: '#EF4444', activeBg: '#EF4444' },
+];
+
+const MAX_RESUBMISSIONS = 3;
+
+// ============================================================
+// Main Component
+// ============================================================
+
+export default function TasksScreen({ user, userData, onBack }: TasksScreenProps) {
+  // --- Partner guard ---
+  if (userData.mode === 'Partner') {
+    return (
+      <div className="min-h-screen bg-[#0A0A0A] text-white flex flex-col items-center justify-center p-6">
+        <div className="w-20 h-20 bg-gray-800/50 rounded-3xl flex items-center justify-center mb-6 border border-gray-700">
+          <AlertTriangle className="w-10 h-10 text-gray-500" />
+        </div>
+        <h2 className="text-2xl font-black mb-3">Tasks Not Available</h2>
+        <p className="text-gray-400 text-center text-sm max-w-xs">
+          Tasks are not available for Partner mode. Switch to Promoter mode to access tasks and earn.
+        </p>
+        <button
+          onClick={onBack}
+          className="mt-6 bg-[#E8B84B] text-black font-bold px-8 py-3 rounded-xl hover:bg-[#D4A743] transition-colors"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  // --- State ---
+  const [activeTab, setActiveTab] = useState<TabType>('all');
+  const [tasks, setTasks] = useState<TaskDoc[]>([]);
+  const [crossVentureTasks, setCrossVentureTasks] = useState<TaskDoc[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionDoc[]>([]);
+  const [selectedTask, setSelectedTask] = useState<TaskDoc | null>(null);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showTaskDetail, setShowTaskDetail] = useState(false);
+
+  // Proof submission state
+  const [proofType, setProofType] = useState<TaskProofType>('image');
+  const [proofValue, setProofValue] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const handleSubmit = async () => {
-    if (!proofLink && !proofFile) {
-      setError('Please provide a proof link or upload a screenshot.');
+  // UI state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(Date.now());
+  const [showCelebration, setShowCelebration] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Tick timer for countdowns ---
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // --- Fetch user's own venture tasks ---
+  useEffect(() => {
+    if (!userData.venture || !userData.role) return;
+
+    const q = query(
+      collection(db, 'tasks'),
+      where('venture', '==', userData.venture),
+      where('role', 'array-contains', userData.role),
+      where('status', '==', 'active'),
+      orderBy('createdAt', 'desc'),
+      limit(30)
+    );
+
+    const unsub = onSnapshot(q, (snap: QuerySnapshot) => {
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as TaskDoc[];
+      setTasks(docs);
+      setLoading(false);
+    }, (err) => {
+      console.error('[Tasks] Error fetching tasks:', err);
+      setLoading(false);
+    });
+
+    return () => unsub();
+  }, [userData.venture, userData.role]);
+
+  // --- Fetch cross-venture tasks (shown when user has 0 tasks today in own venture) ---
+  useEffect(() => {
+    if (tasks.length > 0) return;
+
+    const otherVentures = VENTURES.filter((v) => v !== userData.venture);
+    if (otherVentures.length === 0) return;
+
+    const q = query(
+      collection(db, 'tasks'),
+      where('venture', 'in', otherVentures.slice(0, 10)),
+      where('isCrossVenture', '==', true),
+      where('status', '==', 'active'),
+      orderBy('createdAt', 'desc'),
+      limit(10)
+    );
+
+    const unsub = onSnapshot(q, (snap: QuerySnapshot) => {
+      setCrossVentureTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as TaskDoc[]);
+    }, (err) => {
+      console.error('[Tasks] Error fetching cross-venture tasks:', err);
+    });
+
+    return () => unsub();
+  }, [tasks.length, userData.venture]);
+
+  // --- Fetch user's submissions ---
+  useEffect(() => {
+    const q = query(
+      collection(db, 'taskSubmissions'),
+      where('workerId', '==', user.uid),
+      orderBy('submittedAt', 'desc'),
+      limit(50)
+    );
+
+    const unsub = onSnapshot(q, (snap: QuerySnapshot) => {
+      setSubmissions(snap.docs.map((d) => ({ id: d.id, ...d.data() })) as SubmissionDoc[]);
+    }, (err) => {
+      console.error('[Tasks] Error fetching submissions:', err);
+    });
+
+    return () => unsub();
+  }, [user.uid]);
+
+  // --- Real-time listener for submission status changes (approval → earning credit) ---
+  useEffect(() => {
+    if (submissions.length === 0) return;
+
+    const submissionIds = submissions.map((s) => s.id);
+    const chunks: string[][] = [];
+    for (let i = 0; i < submissionIds.length; i += 10) {
+      chunks.push(submissionIds.slice(i, i + 10));
+    }
+
+    const unsubs: (() => void)[] = [];
+
+    chunks.forEach((chunk) => {
+      const q = query(
+        collection(db, 'taskSubmissions'),
+        where('__name__', 'in', chunk)
+      );
+
+      const unsub = onSnapshot(q, (snap: QuerySnapshot) => {
+        snap.docChanges().forEach((change) => {
+          const data = change.doc.data() as SubmissionDoc | undefined;
+          if (!data) return;
+
+          // Check if submission was just approved
+          if (data.status === 'approved' && data.reviewedAt) {
+            const existing = submissions.find((s) => s.id === change.doc.id);
+            if (existing && existing.status !== 'approved') {
+              // Credit the earning to pending wallet
+              creditEarning(data);
+
+              // Check if this is the first task approval
+              if (!userData.firstTaskDone) {
+                handleFirstTaskApproval();
+              }
+            }
+          }
+        });
+      });
+
+      unsubs.push(unsub);
+    });
+
+    return () => unsubs.forEach((u) => u());
+  }, [submissions.length, userData.firstTaskDone]);
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+
+  const creditEarning = useCallback(async (submission: SubmissionDoc) => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const currentWallet = userData.wallets || { earned: 0, pending: 0, bonus: 0, savings: 0 };
+
+      // Add to earned wallet
+      await updateDoc(userRef, {
+        'wallets.earned': (currentWallet.earned || 0) + submission.earnAmount,
+      });
+
+      // Create transaction record
+      await addDoc(collection(db, 'transactions'), {
+        userId: user.uid,
+        amount: submission.earnAmount,
+        type: 'task_earning',
+        status: 'completed',
+        description: `Task earning: ${submission.taskId}`,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error('[Tasks] Error crediting earning:', err);
+    }
+  }, [user.uid, userData.wallets]);
+
+  const handleFirstTaskApproval = useCallback(async () => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const currentWallet = userData.wallets || { earned: 0, pending: 0, bonus: 0, savings: 0 };
+
+      // Move Rs.27 from pending to earned
+      await updateDoc(userRef, {
+        'wallets.pending': Math.max(0, (currentWallet.pending || 27) - 27),
+        'wallets.earned': (currentWallet.earned || 0) + 27,
+        firstTaskDone: true,
+      });
+
+      // Update transaction status
+      const txnQuery = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid),
+        where('type', '==', 'signup_bonus'),
+        where('status', '==', 'pending'),
+        limit(1)
+      );
+      const txnSnap = await getDocs(txnQuery);
+      txnSnap.forEach(async (txnDoc) => {
+        await updateDoc(doc(db, 'transactions', txnDoc.id), {
+          status: 'completed',
+          description: 'Signup Bonus — Released after first task approval!',
+        });
+      });
+
+      // Show celebration
+      setShowCelebration(true);
+      confetti({
+        particleCount: 120,
+        spread: 70,
+        startVelocity: 40,
+        colors: ['#E8B84B', '#00C9A7', '#FFD700', '#00B396'],
+        gravity: 0.8,
+        ticks: 180,
+      });
+
+      setTimeout(() => setShowCelebration(false), 4000);
+    } catch (err) {
+      console.error('[Tasks] Error handling first task approval:', err);
+    }
+  }, [user.uid, userData.wallets]);
+
+  const getTaskSubmission = useCallback(
+    (taskId: string): SubmissionDoc | undefined => {
+      return submissions.find((s) => s.taskId === taskId);
+    },
+    [submissions]
+  );
+
+  const getTaskTabStatus = useCallback(
+    (task: TaskDoc): TabType => {
+      const sub = getTaskSubmission(task.id);
+      if (!sub) return 'pending';
+      if (sub.status === 'approved') return 'approved';
+      if (sub.status === 'rejected') return 'rejected';
+      return 'submitted';
+    },
+    [getTaskSubmission]
+  );
+
+  const getTimeRemaining = useCallback((deadline: Timestamp | undefined): string => {
+    if (!deadline) return 'Expired';
+    const end = deadline.toDate ? deadline.toDate().getTime() : (deadline as any).seconds * 1000;
+    const diff = end - now;
+    if (diff <= 0) return 'Expired';
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  }, [now]);
+
+  const isExpired = useCallback((deadline: Timestamp | undefined): boolean => {
+    if (!deadline) return true;
+    const end = deadline.toDate ? deadline.toDate().getTime() : (deadline as any).seconds * 1000;
+    return now > end;
+  }, [now]);
+
+  const canSubmit = useCallback((task: TaskDoc): boolean => {
+    const sub = getTaskSubmission(task.id);
+    if (!sub) return true; // never submitted
+    if (sub.status === 'rejected' && sub.resubmissionCount < MAX_RESUBMISSIONS) {
+      return true; // can resubmit
+    }
+    return false;
+  }, [getTaskSubmission]);
+
+  // ============================================================
+  // Filtering
+  // ============================================================
+
+  const allTasks = [...tasks, ...crossVentureTasks];
+
+  const filteredTasks = allTasks.filter((task) => {
+    const matchesSearch =
+      searchQuery.length === 0 ||
+      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      task.description?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (activeTab === 'all') return matchesSearch;
+
+    const tabStatus = getTaskTabStatus(task);
+
+    if (activeTab === 'pending') {
+      return matchesSearch && (tabStatus === 'pending' || (tabStatus === 'submitted' && isExpired(task.deadline)));
+    }
+
+    return matchesSearch && tabStatus === activeTab;
+  });
+
+  // Remove duplicate tasks (by id)
+  const uniqueFilteredTasks = filteredTasks.filter(
+    (task, index, self) => index === self.findIndex((t) => t.id === task.id)
+  );
+
+  // ============================================================
+  // Handlers
+  // ============================================================
+
+  const handleTaskTap = (task: TaskDoc) => {
+    setSelectedTask(task);
+    setShowTaskDetail(true);
+    setShowSubmitModal(false);
+  };
+
+  const handleOpenSubmit = () => {
+    if (!selectedTask) return;
+    const sub = getTaskSubmission(selectedTask.id);
+    setProofType(selectedTask.proofType || 'image');
+    setProofValue('');
+    setProofFile(null);
+    setUploadProgress(0);
+    setSubmitSuccess(false);
+
+    if (sub?.status === 'rejected') {
+      // Pre-fill rejection info
+    }
+
+    setShowSubmitModal(true);
+    setShowTaskDetail(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be under 10MB');
       return;
     }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    setProofFile(file);
+    setProofValue('');
+  };
+
+  const handleSubmitProof = async () => {
+    if (!selectedTask) return;
+
+    const hasProof =
+      (proofType === 'image' && proofFile) ||
+      (proofType === 'link' && proofValue.trim().length > 0) ||
+      (proofType === 'text' && proofValue.trim().length > 0);
+
+    if (!hasProof) return;
+
     setUploading(true);
-    setError(null);
+    setUploadProgress(0);
+
     try {
-      let fileUrl = '';
-      if (proofFile) {
-        const storageRef = ref(storage, `proofs/${userId}/${task.id}_${Date.now()}`);
-        await uploadBytes(storageRef, proofFile);
-        fileUrl = await getDownloadURL(storageRef);
+      let proofUrl = '';
+      let proofText: string | undefined;
+      let proofLink: string | undefined;
+
+      if (proofType === 'image' && proofFile) {
+        // Upload image to Firebase Storage
+        const fileRef = ref(
+          storage,
+          `proofs/${user.uid}/${selectedTask.id}/${Date.now()}_${proofFile.name}`
+        );
+
+        // Simulate progress (uploadBytes doesn't have progress callback)
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => Math.min(prev + Math.random() * 15, 90));
+        }, 200);
+
+        const snapshot = await uploadBytes(fileRef, proofFile);
+        clearInterval(progressInterval);
+        setUploadProgress(100);
+
+        proofUrl = await getDownloadURL(snapshot.ref);
+      } else if (proofType === 'link') {
+        proofLink = proofValue.trim();
+        proofUrl = proofValue.trim();
+      } else {
+        proofText = proofValue.trim();
+        proofUrl = 'text://' + proofValue.trim();
       }
 
+      // Get current resubmission count
+      const existingSub = getTaskSubmission(selectedTask.id);
+      const resubCount = (existingSub?.resubmissionCount || 0) + 1;
+
+      // Create taskSubmissions document
       await addDoc(collection(db, 'taskSubmissions'), {
-        userId,
-        userName,
-        taskId: task.id,
-        taskTitle: task.title,
-        proofLink: proofLink || fileUrl,
-        proofNote,
-        status: 'pending',
+        taskId: selectedTask.id,
+        taskTitle: selectedTask.title,
+        taskVenture: selectedTask.venture,
+        workerId: user.uid,
+        workerName: userData.name,
+        workerVenture: userData.venture,
+        proofUrl,
+        proofType,
+        proofText,
+        proofLink,
+        status: 'pending' as const,
         submittedAt: serverTimestamp(),
+        resubmissionCount: resubCount,
+        earnAmount: selectedTask.earnAmount,
       });
 
-      await updateDoc(doc(db, 'tasks', userId, 'assigned', task.id), {
-        status: 'submitted',
-      });
+      // Show success
+      setSubmitSuccess(true);
+      setShowSubmitModal(false);
 
-      setSuccess(true);
-      onSuccess?.();
+      // Reset after delay
       setTimeout(() => {
-        onClose();
+        setSelectedTask(null);
+        setShowTaskDetail(false);
+        setSubmitSuccess(false);
       }, 2500);
-    } catch (err: any) {
-      setError(err.message || 'Submission failed. Try again.');
+    } catch (error) {
+      console.error('[Tasks] Error submitting proof:', error);
+      alert('Failed to submit proof. Please try again.');
     } finally {
       setUploading(false);
     }
   };
 
-  const earning = task.earnAmount || task.earning || 0;
-  const difficulty = task.difficulty || 'Easy';
-  const diffConfig = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG['Easy'];
-  const timeLeft = getTimeRemaining(task.deadline);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-end md:items-center justify-center p-0 md:p-6"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ y: '100%', opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: '100%', opacity: 0 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-        className="bg-[#111111] rounded-t-[2.5rem] md:rounded-[2.5rem] border border-gray-800 w-full max-w-lg max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Handle bar */}
-        <div className="flex justify-center pt-4 pb-2 md:hidden">
-          <div className="w-12 h-1.5 bg-gray-700 rounded-full" />
-        </div>
-
-        <div className="p-5 sm:p-6 space-y-5 sm:space-y-6">
-          {/* Header */}
-          <div className="flex justify-between items-start">
-            <div className="flex-1 pr-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1 ${diffConfig.color}`}>
-                  {diffConfig.icon}
-                  {difficulty}
-                </span>
-                {task.type && (
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-600">
-                    {task.type}
-                  </span>
-                )}
-              </div>
-              <h2 className="text-xl font-black text-white">{task.title}</h2>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-2xl font-black text-[#00C9A7]">₹{earning}</p>
-              <p className="text-[10px] text-gray-500 font-bold uppercase">Reward</p>
-            </div>
-          </div>
-
-          {/* Time Left */}
-          {timeLeft && (
-            <div className="flex items-center gap-2 text-xs text-gray-400 bg-black/30 p-3 rounded-xl">
-              <Clock size={14} className="text-[#E8B84B]" />
-              <span>Time remaining: <span className="font-bold text-white">{timeLeft}</span></span>
-            </div>
-          )}
-
-          {/* Description */}
-          {task.description && (
-            <div className="bg-[#1A1A1A] p-4 rounded-2xl border border-gray-800">
-              <p className="text-sm text-gray-300 leading-relaxed">{task.description}</p>
-            </div>
-          )}
-
-          {/* Instructions */}
-          {task.instructions && (
-            <div className="space-y-2">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
-                <FileText size={12} /> Instructions
-              </p>
-              <div className="bg-[#1A1A1A] p-4 rounded-2xl border border-gray-800">
-                <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-                  {task.instructions}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Success state */}
-          <AnimatePresence>
-            {success && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center gap-3 p-6 bg-[#00C9A7]/10 border border-[#00C9A7]/20 rounded-2xl text-center"
-              >
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{ type: 'spring', delay: 0.2 }}
-                >
-                  <CheckCircle size={48} className="text-[#00C9A7]" />
-                </motion.div>
-                <p className="font-black text-[#00C9A7] text-lg">Proof Submitted!</p>
-                <p className="text-gray-400 text-sm">
-                  Your submission is under review. You'll be notified once approved.
-                </p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Proof Submission */}
-          {!success && (
-            <div className="space-y-4">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-                Submit Proof
-              </p>
-
-              {/* Proof Link */}
-              <div className="relative">
-                <Link size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
-                <input
-                  type="url"
-                  placeholder="Paste proof link (Google Drive, Screenshot URL...)"
-                  value={proofLink}
-                  onChange={(e) => setProofLink(e.target.value)}
-                  className="w-full bg-black/50 border border-gray-800 rounded-xl py-3.5 pl-11 pr-4 text-sm focus:outline-none focus:border-[#E8B84B] transition-all"
-                />
-              </div>
-
-              {/* OR Divider */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 h-px bg-gray-800" />
-                <span className="text-[10px] font-bold text-gray-600 uppercase">or upload</span>
-                <div className="flex-1 h-px bg-gray-800" />
-              </div>
-
-              {/* File Upload */}
-              <label className="flex items-center gap-3 p-4 bg-black/50 border border-gray-800 border-dashed rounded-xl cursor-pointer hover:border-[#E8B84B]/50 transition-all group">
-                <div className="w-10 h-10 bg-gray-800 rounded-xl flex items-center justify-center group-hover:bg-[#E8B84B]/10 transition-colors">
-                  <ImageIcon size={18} className="text-gray-500 group-hover:text-[#E8B84B] transition-colors" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-400">
-                    {proofFile ? proofFile.name : 'Upload screenshot'}
-                  </p>
-                  <p className="text-[10px] text-gray-600">JPG, PNG, PDF up to 10MB</p>
-                </div>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept="image/*,application/pdf"
-                  onChange={(e) => setProofFile(e.target.files?.[0] || null)}
-                />
-              </label>
-
-              {/* Proof Note */}
-              <textarea
-                placeholder="Add any notes about your submission (optional)..."
-                value={proofNote}
-                onChange={(e) => setProofNote(e.target.value)}
-                rows={3}
-                className="w-full bg-black/50 border border-gray-800 rounded-xl py-3 px-4 text-sm focus:outline-none focus:border-[#E8B84B] transition-all resize-none"
-              />
-
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm"
-                >
-                  <AlertCircle size={14} />
-                  {error}
-                </motion.div>
-              )}
-
-              <button
-                onClick={handleSubmit}
-                disabled={uploading || (!proofLink && !proofFile)}
-                className="w-full bg-[#00C9A7] text-black font-black py-4 rounded-xl flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#00b395] transition-all active:scale-[0.98]"
-              >
-                {uploading ? (
-                  <Loader2 size={20} className="animate-spin" />
-                ) : (
-                  <>
-                    <Upload size={18} /> Submit Proof
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-function getTimeRemaining(deadline: any): string | null {
-  if (!deadline) return null;
-  const end = typeof deadline === 'object' && deadline.seconds ? deadline.seconds * 1000 : new Date(deadline).getTime();
-  const diff = end - Date.now();
-  if (diff <= 0) return 'Expired';
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-  return `${hours}h ${minutes}m left`;
-}
-
-interface TasksScreenProps {
-  user: FirebaseUser;
-  userData: UserData;
-}
-
-export default function TasksScreen({ user, userData }: TasksScreenProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabType>('all');
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    const q = query(
-      collection(db, 'tasks'),
-      where('venture', '==', userData.venture),
-      orderBy('createdAt', 'desc'),
-      limit(30)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setTasks(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task)));
-        setLoading(false);
-      },
-      (err) => handleFirestoreError(err, OperationType.LIST, 'tasks')
-    );
-    return () => unsub();
-  }, [userData.venture]);
-
-  const tabs: { key: TabType; label: string; icon: React.ReactNode }[] = [
-    { key: 'all', label: 'All', icon: <ListTodo size={14} /> },
-    { key: 'pending', label: 'Pending', icon: <Clock size={14} /> },
-    { key: 'submitted', label: 'Submitted', icon: <Upload size={14} /> },
-    { key: 'approved', label: 'Approved', icon: <CheckCircle size={14} /> },
-    { key: 'rejected', label: 'Rejected', icon: <XCircle size={14} /> },
-  ];
-
-  const filterTasks = (tab: TabType) => {
-    let filtered = tasks;
-    if (tab === 'pending') filtered = tasks.filter((t) => !t.status || t.status === 'assigned' || t.status === 'accepted');
-    else if (tab === 'submitted') filtered = tasks.filter((t) => t.status === 'submitted');
-    else if (tab === 'approved') filtered = tasks.filter((t) => t.status === 'approved' || t.status === 'completed');
-    else if (tab === 'rejected') filtered = tasks.filter((t) => t.status === 'rejected');
-
-    if (searchQuery) {
-      filtered = filtered.filter(t =>
-        t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        t.description?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    return filtered;
-  };
-
-  const filteredTasks = filterTasks(activeTab);
-
-  const handleTaskSuccess = () => {
-    // Refresh tasks after successful submission
-  };
+  // ============================================================
+  // Render: Loading
+  // ============================================================
 
   if (loading) {
     return (
-      <div className="p-4 sm:p-6 space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="h-36 sm:h-40 bg-[#111111] rounded-2xl sm:rounded-3xl animate-pulse border border-gray-800" />
-        ))}
+      <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center">
+        <motion.div
+          animate={{ rotate: 360 }}
+          transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          className="w-12 h-12 border-4 border-[#E8B84B]/30 border-t-[#E8B84B] rounded-full"
+        />
       </div>
     );
   }
 
+  // ============================================================
+  // Render: Main
+  // ============================================================
+
   return (
-    <>
-      <div className="p-4 sm:p-6 md:p-8 pb-36 space-y-4 sm:space-y-6 max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-          <div>
-            <h2 className="text-2xl font-black">Tasks</h2>
-            <p className="text-gray-500 text-xs mt-1">{userData.venture} · {userData.role}</p>
+    <div className="min-h-screen bg-[#0A0A0A] text-white pb-24">
+      {/* ===== HEADER ===== */}
+      <div className="bg-[#111111] border-b border-gray-800/50 p-4 sticky top-0 z-40">
+        <div className="flex items-center gap-3 mb-4">
+          <button
+            onClick={onBack}
+            className="p-2 hover:bg-white/10 rounded-xl transition-colors"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </button>
+          <div className="flex-1">
+            <h1 className="text-xl font-black tracking-tight">Tasks</h1>
+            <p className="text-xs text-gray-500">
+              {userData.venture} &middot; {userData.role}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="bg-[#E8B84B]/10 text-[#E8B84B] px-3 py-1.5 rounded-xl text-xs font-bold border border-[#E8B84B]/20">
-              {tasks.length} total
-            </div>
+          <div className="flex items-center gap-1.5 bg-[#E8B84B]/10 px-3 py-1.5 rounded-full">
+            <Zap className="w-3.5 h-3.5 text-[#E8B84B]" />
+            <span className="text-xs font-bold text-[#E8B84B]">
+              {submissions.filter((s) => s.status === 'pending').length} pending
+            </span>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="relative">
-          <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" />
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             type="text"
             placeholder="Search tasks..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-[#111111] border border-gray-800 rounded-xl py-3 pl-11 pr-4 text-sm focus:outline-none focus:border-[#E8B84B] transition-all"
+            className="w-full bg-[#1A1A1A] border border-gray-800/50 rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#E8B84B]/50 transition-colors"
           />
         </div>
 
-        {/* Status Tabs */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
-          {tabs.map((tab) => {
-            const count = filterTasks(tab.key).length;
+        {/* Tabs */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+          {TABS.map((tab) => {
+            const count =
+              tab.key === 'all'
+                ? allTasks.length
+                : allTasks.filter((t) => getTaskTabStatus(t) === tab.key).length;
+
             return (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${activeTab === tab.key
-                  ? 'bg-[#E8B84B] text-black border-[#E8B84B]'
-                  : 'bg-transparent border-gray-800 text-gray-500 hover:border-gray-600'
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-all duration-200 ${activeTab === tab.key
+                  ? 'text-black shadow-lg'
+                  : 'bg-[#1A1A1A] text-gray-500 hover:text-gray-300'
                   }`}
+                style={
+                  activeTab === tab.key
+                    ? { backgroundColor: tab.activeBg, boxShadow: `0 4px 12px ${tab.activeBg}33` }
+                    : undefined
+                }
               >
                 {tab.icon}
                 {tab.label}
                 {count > 0 && (
                   <span
-                    className={`ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-black ${activeTab === tab.key ? 'bg-black/20 text-black' : 'bg-gray-800 text-gray-400'
+                    className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] ${activeTab === tab.key ? 'bg-black/20' : 'bg-gray-800'
                       }`}
                   >
                     {count}
@@ -457,109 +624,655 @@ export default function TasksScreen({ user, userData }: TasksScreenProps) {
             );
           })}
         </div>
-
-        {/* Task Cards */}
-        <AnimatePresence mode="wait">
-          {filteredTasks.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col items-center justify-center py-16 text-center"
-            >
-              <div className="w-16 h-16 bg-[#1A1A1A] rounded-3xl flex items-center justify-center mb-4 border border-dashed border-gray-700">
-                <ListTodo size={32} className="text-gray-600" />
-              </div>
-              <p className="text-gray-500 font-medium">No {activeTab !== 'all' ? activeTab : ''} tasks right now</p>
-              <p className="text-gray-700 text-sm mt-1">New tasks are assigned by your admin every day.</p>
-            </motion.div>
-          ) : (
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-3"
-            >
-              {filteredTasks.map((task, idx) => {
-                const earning = task.earnAmount || task.earning || 0;
-                const timeLeft = getTimeRemaining(task.deadline);
-                const statusConfig = STATUS_CONFIG[task.status || 'assigned'] || STATUS_CONFIG.assigned;
-                const difficulty = task.difficulty || 'Easy';
-                const diffConfig = DIFFICULTY_CONFIG[difficulty] || DIFFICULTY_CONFIG['Easy'];
-
-                return (
-                  <motion.div
-                    key={task.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="bg-[#111111] p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-gray-800 hover:border-gray-600 transition-all group cursor-pointer"
-                    onClick={() => setSelectedTask(task)}
-                  >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-800 rounded-xl sm:rounded-2xl flex items-center justify-center group-hover:bg-[#E8B84B]/10 transition-colors">
-                          <ListTodo size={18} className="text-gray-400 group-hover:text-[#E8B84B] transition-colors" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className={`text-[10px] font-bold uppercase flex items-center gap-1 ${diffConfig.color}`}>
-                              {diffConfig.icon}
-                              {difficulty}
-                            </span>
-                          </div>
-                          {timeLeft && (
-                            <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                              <Clock size={10} />
-                              {timeLeft}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xl font-black text-[#00C9A7]">₹{earning}</p>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusConfig.color} ${statusConfig.bg} ${statusConfig.border}`}>
-                          {statusConfig.label}
-                        </span>
-                      </div>
-                    </div>
-
-                    <h3 className="font-bold text-base text-white mb-1 line-clamp-2">{task.title}</h3>
-                    {task.description && (
-                      <p className="text-gray-500 text-xs leading-relaxed line-clamp-2 mb-3">
-                        {task.description}
-                      </p>
-                    )}
-
-                    <div className="flex justify-between items-center">
-                      {task.venture && (
-                        <span className="text-[10px] text-gray-600 font-bold bg-gray-800/50 px-2 py-1 rounded-lg">
-                          {task.venture}
-                        </span>
-                      )}
-                      <span className="text-[11px] text-[#E8B84B] font-bold flex items-center gap-1 ml-auto group-hover:gap-2 transition-all">
-                        View Details <ChevronRight size={12} />
-                      </span>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
-      {/* Task Detail Modal */}
+      {/* ===== CROSS-VENTURE BANNER ===== */}
       <AnimatePresence>
-        {selectedTask && (
-          <TaskDetailModal
-            task={selectedTask}
-            userId={user.uid}
-            userName={userData.name}
-            onClose={() => setSelectedTask(null)}
-            onSuccess={handleTaskSuccess}
-          />
+        {crossVentureTasks.length > 0 && tasks.length === 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mx-4 mt-4"
+          >
+            <div className="bg-gradient-to-r from-purple-500/10 to-purple-600/5 border border-purple-500/20 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 bg-purple-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <Zap className="w-5 h-5 text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-purple-300 mb-1">
+                    Earn from Other Ventures Today
+                  </h3>
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    No tasks available in {userData.venture}. Try these cross-venture tasks — earn Rs.15-25 each.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
-    </>
+
+      {/* ===== TASK LIST ===== */}
+      <div className="p-4 space-y-3">
+        {uniqueFilteredTasks.length > 0 ? (
+          uniqueFilteredTasks.map((task) => {
+            const tabStatus = getTaskTabStatus(task);
+            const submission = getTaskSubmission(task.id);
+            const expired = isExpired(task.deadline);
+            const isCross = task.isCrossVenture;
+
+            return (
+              <motion.div
+                key={task.id}
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                transition={{ duration: 0.2 }}
+                onClick={() => handleTaskTap(task)}
+                className={`bg-[#1A1A1A] rounded-2xl border cursor-pointer transition-all duration-200 active:scale-[0.98] hover:bg-[#1f1f1f] ${isCross ? 'border-purple-500/30' : 'border-gray-800/50'
+                  }`}
+              >
+                <div className="p-4">
+                  {/* Top row: title + earning */}
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1 min-w-0 pr-3">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        {isCross && (
+                          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                            Cross-Venture
+                          </span>
+                        )}
+                        {task.isMystery && (
+                          <span className="px-2 py-0.5 bg-[#E8B84B]/20 text-[#E8B84B] text-[10px] font-bold rounded-full uppercase tracking-wider flex items-center gap-1">
+                            <Timer className="w-3 h-3" /> Mystery
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="font-bold text-sm leading-snug truncate">{task.title}</h3>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isCross
+                            ? 'bg-purple-500/20 text-purple-400'
+                            : 'bg-gray-800 text-gray-400'
+                            }`}
+                        >
+                          {task.venture}
+                        </span>
+                        <span className="text-[10px] text-gray-500">
+                          {Array.isArray(task.role) ? task.role.join(', ') : task.role}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-lg font-black text-[#00C9A7]">₹{task.earnAmount}</p>
+                    </div>
+                  </div>
+
+                  {/* Bottom row: deadline + status + action */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className={expired ? 'text-red-400' : ''}>
+                          {expired ? 'Expired' : getTimeRemaining(task.deadline)}
+                        </span>
+                      </div>
+
+                      {/* Status badge */}
+                      <StatusBadge status={tabStatus} />
+                    </div>
+
+                    {/* Action button */}
+                    {tabStatus === 'pending' && !expired && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTaskTap(task);
+                        }}
+                        className="bg-[#E8B84B] text-black text-xs font-bold px-4 py-2 rounded-lg hover:bg-[#D4A743] transition-colors active:scale-95"
+                      >
+                        Submit Proof
+                      </button>
+                    )}
+                    {tabStatus === 'rejected' && submission && submission.resubmissionCount < MAX_RESUBMISSIONS && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleTaskTap(task);
+                        }}
+                        className="bg-[#00C9A7] text-black text-xs font-bold px-4 py-2 rounded-lg hover:bg-[#00b395] transition-colors active:scale-95 flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3 h-3" /> Resubmit
+                      </button>
+                    )}
+                    {tabStatus === 'rejected' && submission && submission.resubmissionCount >= MAX_RESUBMISSIONS && (
+                      <span className="text-xs text-red-400 font-bold">Max resubmits reached</span>
+                    )}
+                    {tabStatus === 'submitted' && (
+                      <span className="text-xs text-blue-400 font-bold flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> Awaiting review
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Rejection reason */}
+                  {tabStatus === 'rejected' && submission?.rejectionReason && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-3 bg-red-500/10 border border-red-500/20 rounded-xl p-3"
+                    >
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-xs text-red-400 font-bold mb-0.5">Rejection Reason</p>
+                          <p className="text-xs text-gray-400 leading-relaxed">{submission.rejectionReason}</p>
+                          <p className="text-[10px] text-gray-600 mt-1">
+                            Resubmission {submission.resubmissionCount}/{MAX_RESUBMISSIONS}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })
+        ) : (
+          <div className="flex flex-col items-center justify-center py-16">
+            <div className="w-20 h-20 bg-gray-800/50 rounded-3xl flex items-center justify-center mb-4">
+              <ListTodo className="w-10 h-10 text-gray-600" />
+            </div>
+            <p className="text-gray-400 font-bold text-sm mb-1">No tasks found</p>
+            <p className="text-gray-600 text-xs">
+              {searchQuery ? 'Try a different search' : 'Check back later for new tasks'}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ===== TASK DETAIL MODAL ===== */}
+      <AnimatePresence>
+        {selectedTask && showTaskDetail && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+            onClick={() => {
+              setShowTaskDetail(false);
+              setSelectedTask(null);
+            }}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-[#111111] w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto border border-gray-800/50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="sticky top-0 bg-[#111111]/95 backdrop-blur-sm border-b border-gray-800/50 p-4 flex items-center justify-between z-10">
+                <h3 className="text-lg font-black">Task Details</h3>
+                <button
+                  onClick={() => {
+                    setShowTaskDetail(false);
+                    setSelectedTask(null);
+                  }}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Task title + badges */}
+                <div>
+                  <h4 className="text-lg font-black mb-2">{selectedTask.title}</h4>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-2.5 py-1 bg-[#E8B84B]/10 text-[#E8B84B] text-xs font-bold rounded-full">
+                      {selectedTask.venture}
+                    </span>
+                    {selectedTask.isCrossVenture && (
+                      <span className="px-2.5 py-1 bg-purple-500/10 text-purple-400 text-xs font-bold rounded-full">
+                        Cross-Venture
+                      </span>
+                    )}
+                    {selectedTask.isMystery && (
+                      <span className="px-2.5 py-1 bg-[#00C9A7]/10 text-[#00C9A7] text-xs font-bold rounded-full flex items-center gap-1">
+                        <Timer className="w-3 h-3" /> Mystery
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-[#1A1A1A] rounded-xl p-3 text-center">
+                    <Zap className="w-5 h-5 text-[#E8B84B] mx-auto mb-1" />
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Earning</p>
+                    <p className="text-base font-black text-[#E8B84B]">₹{selectedTask.earnAmount}</p>
+                  </div>
+                  <div className="bg-[#1A1A1A] rounded-xl p-3 text-center">
+                    <Clock className="w-5 h-5 text-[#00C9A7] mx-auto mb-1" />
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Time Left</p>
+                    <p className={`text-base font-black ${isExpired(selectedTask.deadline) ? 'text-red-400' : 'text-[#00C9A7]'}`}>
+                      {isExpired(selectedTask.deadline) ? 'Expired' : getTimeRemaining(selectedTask.deadline)}
+                    </p>
+                  </div>
+                  <div className="bg-[#1A1A1A] rounded-xl p-3 text-center">
+                    <FileText className="w-5 h-5 text-blue-400 mx-auto mb-1" />
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">Proof</p>
+                    <p className="text-base font-black text-blue-400 capitalize">{selectedTask.proofType}</p>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div className="bg-[#1A1A1A] rounded-xl p-4">
+                  <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Description</h5>
+                  <p className="text-sm text-gray-300 leading-relaxed">{selectedTask.description}</p>
+                </div>
+
+                {/* Instructions */}
+                {selectedTask.instructions && (
+                  <div className="bg-[#1A1A1A] rounded-xl p-4">
+                    <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Instructions</h5>
+                    <p className="text-sm text-gray-300 leading-relaxed">{selectedTask.instructions}</p>
+                  </div>
+                )}
+
+                {/* Proof requirements */}
+                {selectedTask.proofRequirements && (
+                  <div className="bg-[#1A1A1A] rounded-xl p-4">
+                    <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Proof Requirements</h5>
+                    <p className="text-sm text-gray-300 leading-relaxed">{selectedTask.proofRequirements}</p>
+                  </div>
+                )}
+
+                {/* Existing submission info */}
+                {(() => {
+                  const sub = getTaskSubmission(selectedTask.id);
+                  if (!sub) return null;
+
+                  return (
+                    <div className="bg-[#1A1A1A] rounded-xl p-4">
+                      <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Your Submission</h5>
+                      <div className="flex items-center justify-between mb-2">
+                        <StatusBadge status={sub.status} />
+                        <span className="text-xs text-gray-500">
+                          {sub.resubmissionCount}/{MAX_RESUBMISSIONS} resubmits
+                        </span>
+                      </div>
+                      {sub.rejectionReason && (
+                        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mt-2">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs text-red-400 font-bold">Rejected</p>
+                              <p className="text-xs text-gray-400 mt-0.5">{sub.rejectionReason}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Submit / Resubmit button */}
+                {canSubmit(selectedTask) && !isExpired(selectedTask.deadline) && (
+                  <button
+                    onClick={handleOpenSubmit}
+                    className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl hover:bg-[#D4A743] transition-colors active:scale-[0.98] flex items-center justify-center gap-2 text-base"
+                  >
+                    <Upload className="w-5 h-5" />
+                    {getTaskSubmission(selectedTask.id)?.status === 'rejected' ? 'Resubmit Proof' : 'Submit Proof'}
+                  </button>
+                )}
+
+                {/* Disabled state */}
+                {!canSubmit(selectedTask) && (
+                  <div className="text-center py-3">
+                    {getTaskSubmission(selectedTask.id)?.status === 'rejected' &&
+                      getTaskSubmission(selectedTask.id)!.resubmissionCount >= MAX_RESUBMISSIONS && (
+                        <p className="text-red-400 text-sm font-bold">
+                          This task is permanently closed (max resubmissions reached)
+                        </p>
+                      )}
+                    {getTaskSubmission(selectedTask.id)?.status === 'submitted' && (
+                      <p className="text-blue-400 text-sm font-bold flex items-center justify-center gap-1">
+                        <Clock className="w-4 h-4" /> Submitted — Awaiting review
+                      </p>
+                    )}
+                    {getTaskSubmission(selectedTask.id)?.status === 'approved' && (
+                      <p className="text-[#00C9A7] text-sm font-bold flex items-center justify-center gap-1">
+                        <CheckCircle className="w-4 h-4" /> Approved — ₹{selectedTask.earnAmount} earned
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== SUBMIT PROOF MODAL ===== */}
+      <AnimatePresence>
+        {selectedTask && showSubmitModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center"
+            onClick={() => {
+              if (!uploading) {
+                setShowSubmitModal(false);
+                setShowTaskDetail(true);
+              }
+            }}
+          >
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="bg-[#111111] w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto border border-gray-800/50"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="sticky top-0 bg-[#111111]/95 backdrop-blur-sm border-b border-gray-800/50 p-4 flex items-center justify-between z-10">
+                <h3 className="text-lg font-black">
+                  {getTaskSubmission(selectedTask.id)?.status === 'rejected' ? 'Resubmit Proof' : 'Submit Proof'}
+                </h3>
+                <button
+                  onClick={() => {
+                    if (!uploading) {
+                      setShowSubmitModal(false);
+                      setShowTaskDetail(true);
+                    }
+                  }}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors disabled:opacity-30"
+                  disabled={uploading}
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-5">
+                {/* Task summary */}
+                <div className="bg-[#1A1A1A] rounded-xl p-4">
+                  <h4 className="font-bold text-sm mb-1">{selectedTask.title}</h4>
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center gap-1.5">
+                      <Zap className="w-4 h-4 text-[#E8B84B]" />
+                      <span className="text-sm font-bold text-[#E8B84B]">₹{selectedTask.earnAmount}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <Clock className="w-3 h-3" />
+                      <span>{isExpired(selectedTask.deadline) ? 'Expired' : getTimeRemaining(selectedTask.deadline)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Proof type selector */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                    Proof Type
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'image' as TaskProofType, label: 'Image', icon: ImageIcon },
+                      { key: 'link' as TaskProofType, label: 'Link', icon: LinkIcon },
+                      { key: 'text' as TaskProofType, label: 'Text', icon: FileText },
+                    ].map((type) => (
+                      <button
+                        key={type.key}
+                        onClick={() => {
+                          setProofType(type.key);
+                          setProofValue('');
+                          setProofFile(null);
+                        }}
+                        className={`flex flex-col items-center gap-2 p-3 rounded-xl border transition-all duration-200 ${proofType === type.key
+                          ? 'border-[#E8B84B] bg-[#E8B84B]/10 text-[#E8B84B]'
+                          : 'border-gray-800 bg-[#1A1A1A] text-gray-500 hover:text-gray-300 hover:border-gray-700'
+                          }`}
+                      >
+                        <type.icon className="w-5 h-5" />
+                        <span className="text-xs font-bold">{type.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Proof input */}
+                {proofType === 'image' && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">
+                      Upload Image
+                    </label>
+                    <div
+                      onClick={() => !uploading && fileInputRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${uploading
+                        ? 'border-gray-700 cursor-not-allowed'
+                        : proofFile
+                          ? 'border-[#00C9A7]/50 bg-[#00C9A7]/5 hover:border-[#00C9A7]'
+                          : 'border-gray-700 hover:border-[#E8B84B]/50'
+                        }`}
+                    >
+                      {proofFile ? (
+                        <div className="space-y-2">
+                          <CheckCircle className="w-8 h-8 text-[#00C9A7] mx-auto" />
+                          <p className="text-sm font-bold text-white">{proofFile.name}</p>
+                          <p className="text-xs text-gray-500">{(proofFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProofFile(null);
+                            }}
+                            className="text-xs text-red-400 hover:text-red-300 mt-1"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Upload className="w-8 h-8 text-gray-600 mx-auto" />
+                          <p className="text-sm text-gray-400">Tap to upload screenshot</p>
+                          <p className="text-xs text-gray-600">PNG, JPG up to 10MB</p>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+
+                    {/* Upload progress bar */}
+                    {uploading && (
+                      <div className="mt-3">
+                        <div className="w-full h-2.5 bg-gray-800 rounded-full overflow-hidden">
+                          <motion.div
+                            className="h-full bg-gradient-to-r from-[#E8B84B] to-[#00C9A7]"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${uploadProgress}%` }}
+                            transition={{ duration: 0.3 }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1.5 text-center">
+                          Uploading... {Math.round(uploadProgress)}%
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {proofType === 'link' && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                      Enter URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/your-work"
+                      value={proofValue}
+                      onChange={(e) => setProofValue(e.target.value)}
+                      className="w-full bg-[#1A1A1A] border border-gray-800/50 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#E8B84B]/50 transition-colors"
+                    />
+                  </div>
+                )}
+
+                {proofType === 'text' && (
+                  <div>
+                    <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                      Enter Description
+                    </label>
+                    <textarea
+                      placeholder="Describe your completed work in detail..."
+                      value={proofValue}
+                      onChange={(e) => setProofValue(e.target.value)}
+                      rows={5}
+                      maxLength={1000}
+                      className="w-full bg-[#1A1A1A] border border-gray-800/50 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#E8B84B]/50 transition-colors resize-none"
+                    />
+                    <p className="text-xs text-gray-600 mt-1.5 text-right">{proofValue.length}/1000</p>
+                  </div>
+                )}
+
+                {/* Submit button */}
+                <button
+                  onClick={handleSubmitProof}
+                  disabled={
+                    uploading ||
+                    (proofType === 'image' && !proofFile) ||
+                    ((proofType === 'link' || proofType === 'text') && proofValue.trim().length === 0)
+                  }
+                  className="w-full bg-[#E8B84B] text-black font-bold py-4 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#D4A743] transition-colors active:scale-[0.98] text-base flex items-center justify-center gap-2"
+                >
+                  {uploading ? (
+                    <>
+                      <motion.div
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                        className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full"
+                      />
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-5 h-5" />
+                      {getTaskSubmission(selectedTask.id)?.status === 'rejected' ? 'Resubmit Proof' : 'Submit Proof'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== SUBMISSION SUCCESS TOAST ===== */}
+      <AnimatePresence>
+        {submitSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.9 }}
+            className="fixed bottom-24 left-4 right-4 max-w-md mx-auto z-50"
+          >
+            <div className="bg-[#00C9A7]/10 border border-[#00C9A7]/30 rounded-2xl p-4 backdrop-blur-sm">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-[#00C9A7]/20 rounded-full flex items-center justify-center flex-shrink-0">
+                  <CheckCircle className="w-6 h-6 text-[#00C9A7]" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-[#00C9A7]">Submitted!</p>
+                  <p className="text-xs text-gray-400">Awaiting review. You'll be notified when it's approved.</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== CELEBRATION OVERLAY (First task approval) ===== */}
+      <AnimatePresence>
+        {showCelebration && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-6"
+            onClick={() => setShowCelebration(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              transition={{ type: 'spring', damping: 15 }}
+              className="bg-gradient-to-br from-[#E8B84B]/20 to-[#00C9A7]/10 border border-[#E8B84B]/30 rounded-3xl p-8 max-w-sm w-full text-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-20 h-20 bg-[#E8B84B]/20 rounded-full flex items-center justify-center mx-auto mb-5">
+                <Award className="w-10 h-10 text-[#E8B84B]" />
+              </div>
+              <h2 className="text-2xl font-black mb-2">First Task Approved!</h2>
+              <p className="text-gray-300 text-sm mb-4 leading-relaxed">
+                Congratulations! Your Rs.27 signup bonus has been moved from pending to earned.
+                Keep completing tasks to earn more!
+              </p>
+              <div className="bg-[#00C9A7]/10 rounded-xl p-4 mb-5">
+                <p className="text-3xl font-black text-[#00C9A7]">+₹27</p>
+                <p className="text-xs text-gray-400 mt-1">Signup Bonus Released</p>
+              </div>
+              <button
+                onClick={() => setShowCelebration(false)}
+                className="w-full bg-[#E8B84B] text-black font-bold py-3 rounded-xl hover:bg-[#D4A743] transition-colors"
+              >
+                Keep Earning!
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ============================================================
+// Sub-components
+// ============================================================
+
+interface StatusBadgeProps {
+  status: 'pending' | 'submitted' | 'approved' | 'rejected';
+}
+
+function StatusBadge({ status }: StatusBadgeProps) {
+  const config: Record<string, { bg: string; text: string; label: string }> = {
+    pending: { bg: 'bg-yellow-500/15', text: 'text-yellow-500', label: 'Pending' },
+    submitted: { bg: 'bg-blue-500/15', text: 'text-blue-400', label: 'Submitted' },
+    approved: { bg: 'bg-green-500/15', text: 'text-green-400', label: 'Approved' },
+    rejected: { bg: 'bg-red-500/15', text: 'text-red-400', label: 'Rejected' },
+  };
+
+  const c = config[status] || config.pending;
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${c.bg} ${c.text}`}>
+      {status === 'approved' && <CheckCircle className="w-3 h-3" />}
+      {status === 'rejected' && <XCircle className="w-3 h-3" />}
+      {status === 'submitted' && <Clock className="w-3 h-3" />}
+      {status === 'pending' && <Clock className="w-3 h-3" />}
+      {c.label}
+    </span>
   );
 }
