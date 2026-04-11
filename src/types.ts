@@ -584,3 +584,11 @@ export const isAdminEmail = (email?: string): boolean => {
   if (!email) return false;
   return ADMIN_EMAILS.includes(email as (typeof ADMIN_EMAILS)[number]);
 };
+
+// ============================================================
+// Utility Functions
+// ============================================================
+
+export const generateId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};

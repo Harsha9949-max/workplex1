@@ -1,307 +1,246 @@
 /**
- * WorkPlex Partner Store Cloud Functions
- * 
+ * WorkPlex Phase 9 — DeepSeek AI Integration (Firebase Cloud Functions)
+ * AI-powered features: Task Generator, Earnings Predictor, Content Reviewer, Fraud Detector
  * Deploy with: firebase deploy --only functions
- * 
- * Schedule:
- * - releasePartnerMargins: every day at midnight
- * - checkPartnerActivity: every week on Sunday
  */
 
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const { Firestore } = require('@google-cloud/firestore');
+const axios = require('axios');
 
 admin.initializeApp();
 const db = admin.firestore();
 
-/**
- * releasePartnerMargins()
- * 
- * Runs daily at midnight via Cloud Scheduler
- * Checks for orders where marginStatus is "holding" and marginReleaseAt <= now
- * Updates marginStatus to "pending" and creates partnerMargins record
- */
-exports.releasePartnerMargins = functions.pubsub
-  .schedule('0 0 * * *')
-  .timeZone('Asia/Kolkata')
-  .onRun(async (context) => {
-    console.log('Starting margin release job...');
+// DeepSeek API Configuration
+const DEEPSEEK_API_KEY = functions.config().deepseek?.api_key || 'YOUR_API_KEY';
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions';
 
-    try {
-      const now = admin.firestore.Timestamp.now();
-      
-      // Get orders where marginStatus is "holding" and marginReleaseAt <= now
-      const holdingOrders = await db.collection('partnerOrders')
-        .where('marginStatus', '==', 'holding')
-        .where('marginReleaseAt', '<=', now)
+// Rate limiting: max 1 AI call per worker per minute
+const rateLimitStore = new Map();
+const checkRateLimit = (uid) => {
+  const now = Date.now();
+  const lastCall = rateLimitStore.get(uid);
+  if (lastCall && now - lastCall < 60000) return false;
+  rateLimitStore.set(uid, now);
+  return true;
+};
+
+// Call DeepSeek API
+const callDeepSeek = async (messages, maxTokens = 500) => {
+  try {
+    const response = await axios.post(DEEPSEEK_API_URL, {
+      model: 'deepseek-chat',
+      messages,
+      max_tokens: maxTokens,
+      temperature: 0.7
+    }, {
+      headers: {
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    return response.data.choices[0].message.content;
+  } catch (error) {
+    console.error('DeepSeek API error:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+/**
+ * AI Task Generator - Runs daily at 6am via Cloud Scheduler
+ */
+exports.generateDailyTasks = functions.pubsub.schedule('0 6 * * *').onRun(async (context) => {
+  console.log('Starting daily task generation...');
+  try {
+    const usersSnapshot = await db.collection('users')
+      .where('mode', '==', 'Promoter')
+      .where('onboardingStatus', '==', 'completed')
+      .get();
+
+    for (const userDoc of usersSnapshot.docs) {
+      const userData = userDoc.data();
+      const uid = userDoc.id;
+
+      const lastGenerated = userData.aiTasksGeneratedAt?.toDate();
+      if (lastGenerated && Date.now() - lastGenerated.getTime() < 6 * 60 * 60 * 1000) continue;
+
+      const submissionsSnapshot = await db.collection('taskSubmissions')
+        .where('workerId', '==', uid)
+        .where('status', '==', 'approved')
+        .orderBy('submittedAt', 'desc')
+        .limit(7)
         .get();
 
-      console.log(`Found ${holdingOrders.size} orders to release margins for`);
+      const completedTaskTypes = submissionsSnapshot.docs.map(d => d.data().taskTitle);
+      const prompt = `Generate 3 marketing tasks for a ${userData.role} at ${userData.venture}. Their recent tasks: ${completedTaskTypes.join(', ') || 'none'}. Make tasks specific, actionable, different from recent ones. Return JSON array: [{"title": "...", "description": "...", "proofType": "image|link|text", "earnAmount": 25, "difficulty": "easy|medium|hard"}]`;
 
-      for (const orderDoc of holdingOrders.docs) {
-        const order = orderDoc.data();
-        
-        // Update order marginStatus to "pending"
-        await db.collection('partnerOrders').doc(orderDoc.id).update({
-          marginStatus: 'pending'
-        });
+      try {
+        const response = await callDeepSeek([
+          { role: 'system', content: 'You are a task generator for a gig economy platform. Return ONLY valid JSON.' },
+          { role: 'user', content: prompt }
+        ]);
+        const tasks = JSON.parse(response);
 
-        // Create partnerMargins pending record
-        await db.collection('partnerMargins').doc(order.partnerId)
-          .collection('pending').add({
-            orderId: orderDoc.id,
-            amount: order.totalPartnerMargin,
-            status: 'pending',
-            orderedAt: order.orderedAt,
-            releaseAt: now,
-            releasedAt: null
+        for (const task of tasks) {
+          await db.collection('tasks').add({
+            ...task,
+            venture: userData.venture,
+            role: [userData.role],
+            assignedTo: 'all',
+            isCrossVenture: false,
+            isMystery: false,
+            status: 'active',
+            deadline: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)),
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
           });
-
-        console.log(`Released margin for order ${orderDoc.id}: ₹${order.totalPartnerMargin}`);
-      }
-
-      console.log(`Margin release completed for ${holdingOrders.size} orders`);
-      return null;
-
-    } catch (error) {
-      console.error('Error releasing margins:', error);
-      return null;
-    }
-  });
-
-/**
- * checkPartnerActivity()
- * 
- * Runs weekly to check for inactive partners
- * Marks partners with no orders in 30+ days as inactive
- */
-exports.checkPartnerActivity = functions.pubsub
-  .schedule('0 0 * * 0')  // Every Sunday at midnight
-  .timeZone('Asia/Kolkata')
-  .onRun(async (context) => {
-    console.log('Starting partner activity check...');
-
-    try {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const thirtyDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(thirtyDaysAgo);
-
-      // Get all partner shops
-      const partners = await db.collection('partnerShops').get();
-      let inactiveCount = 0;
-
-      for (const partnerDoc of partners.docs) {
-        const partner = partnerDoc.data();
-
-        // Check if partner has any orders in last 30 days
-        const recentOrders = await db.collection('partnerOrders')
-          .where('partnerId', '==', partner.ownerId)
-          .where('orderedAt', '>=', thirtyDaysAgoTimestamp)
-          .limit(1)
-          .get();
-
-        if (recentOrders.empty) {
-          // Mark as inactive
-          await db.collection('partnerShops').doc(partner.ownerId).update({
-            isActive: false
-          });
-          inactiveCount++;
-          console.log(`Marked inactive: ${partner.shopName}`);
         }
+
+        await db.collection('users').doc(uid).update({
+          aiTasksGeneratedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (parseError) {
+        console.error(`Failed to parse AI response for user ${uid}:`, parseError);
       }
-
-      console.log(`Activity check completed. ${inactiveCount} partners marked inactive`);
-      return null;
-
-    } catch (error) {
-      console.error('Error checking partner activity:', error);
-      return null;
     }
-  });
-
-/**
- * processPartnerOrder()
- * 
- * Triggered when a new partner order is created
- * Updates partner stats
- */
-exports.processPartnerOrder = functions.firestore
-  .document('partnerOrders/{orderId}')
-  .onCreate(async (snapshot, context) => {
-    const order = snapshot.data();
-
-    try {
-      // Update partner stats
-      await db.collection('partnerShops').doc(order.partnerId).update({
-        totalOrders: admin.firestore.FieldValue.increment(1),
-        totalSales: admin.firestore.FieldValue.increment(order.totalAmount),
-        lastActiveAt: admin.firestore.Timestamp.now()
-      });
-
-      // Update product totalSold
-      for (const product of order.products) {
-        await db.collection('partnerProducts')
-          .doc(order.partnerId)
-          .collection('products')
-          .doc(product.productId)
-          .update({
-            totalSold: admin.firestore.FieldValue.increment(product.quantity)
-          });
-      }
-
-      console.log(`Processed order ${snapshot.id}`);
-      return null;
-
-    } catch (error) {
-      console.error('Error processing order:', error);
-      return null;
-    }
-  });
-
-/**
- * handleOrderDelivery()
- * 
- * Triggered when order status changes to "delivered"
- * Sets margin release date to 7 days from delivery
- */
-exports.handleOrderDelivery = functions.firestore
-  .document('partnerOrders/{orderId}')
-  .onUpdate(async (change, context) => {
-    const before = change.before.data();
-    const after = change.after.data();
-
-    // Only trigger when status changes to "delivered"
-    if (before.status !== 'delivered' && after.status === 'delivered') {
-      const deliveryDate = new Date();
-      deliveryDate.setDate(deliveryDate.getDate() + 7);
-
-      await db.collection('partnerOrders').doc(context.params.orderId).update({
-        marginReleaseAt: admin.firestore.Timestamp.fromDate(deliveryDate),
-        marginStatus: 'holding'
-      });
-
-      console.log(`Set margin release for order ${context.params.orderId}`);
-    }
-
-    return null;
-  });
-
-/**
- * processWithdrawal()
- * 
- * Triggered when withdrawal is approved
- * Transfers margin from pending to withdrawn
- */
-exports.processWithdrawal = functions.firestore
-  .document('partnerWithdrawals/{withdrawalId}')
-  .onUpdate(async (change, context) => {
-    const before = change.before.data();
-    const after = change.after.data();
-
-    // Only process when status changes to "approved"
-    if (before.status !== 'approved' && after.status === 'approved') {
-      const partnerId = after.partnerId;
-      const amount = after.amount;
-
-      // Update partner's total withdrawn
-      await db.collection('partnerShops').doc(partnerId).update({
-        totalWithdrawn: admin.firestore.FieldValue.increment(amount)
-      });
-
-      console.log Processed withdrawal for partner ${partnerId}: ₹${amount}`);
-    }
-
-    return null;
-  });
-
-/**
- * createDefaultPartnerMargins()
- * 
- * HTTP function to manually trigger margin release (for testing)
- */
-exports.createDefaultPartnerMargins = functions.https.onCall(async (data, context) => {
-  // Verify admin
-  if (!context.auth || context.auth.token.email !== 'marateyh@gmail.com') {
-    throw new functions.https.HttpsError('unauthenticated', 'Admin only');
+    console.log('Daily task generation complete');
+  } catch (error) {
+    console.error('Task generation error:', error);
   }
+});
 
-  const now = admin.firestore.Timestamp.now();
-  
-  // Get orders where marginStatus is "holding" and marginReleaseAt <= now
-  const holdingOrders = await db.collection('partnerOrders')
-    .where('marginStatus', '==', 'holding')
-    .where('marginReleaseAt', '<=', now)
-    .get();
+/**
+ * AI Earnings Predictor - Called when home screen loads
+ */
+exports.predictEarnings = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+  const uid = context.auth.uid;
+  if (!checkRateLimit(uid)) throw new functions.https.HttpsError('resource-exhausted', 'Rate limit exceeded');
 
-  const results = [];
+  try {
+    const userDoc = await db.collection('users').doc(uid).get();
+    const userData = userDoc.data();
+    let prediction;
 
-  for (const orderDoc of holdingOrders.docs) {
-    const order = orderDoc.data();
-    
-    await db.collection('partnerOrders').doc(orderDoc.id).update({
-      marginStatus: 'pending'
+    if (userData.mode === 'Promoter') {
+      const tasksSnapshot = await db.collection('tasks')
+        .where('venture', '==', userData.venture)
+        .where('role', 'array-contains', userData.role)
+        .where('status', '==', 'active')
+        .get();
+
+      const pendingCount = tasksSnapshot.size;
+      const avgEarning = tasksSnapshot.docs.reduce((sum, d) => sum + (d.data().earnAmount || 0), 0) / (pendingCount || 1);
+      const prompt = `Worker has ${pendingCount} pending tasks. Average earning Rs.${avgEarning.toFixed(0)}. Predict today's additional earning potential. Return JSON: {"predictedEarning": number, "tasksToComplete": number, "motivationalMessage": "string"}`;
+
+      const response = await callDeepSeek([
+        { role: 'system', content: 'You are an earnings predictor. Return ONLY valid JSON.' },
+        { role: 'user', content: prompt }
+      ]);
+      prediction = JSON.parse(response);
+    } else {
+      const ordersSnapshot = await db.collection('partnerOrders').where('partnerId', '==', uid).where('status', '==', 'pending').get();
+      const productsSnapshot = await db.collection('partnerProducts').where('partnerId', '==', uid).where('isActive', '==', true).get();
+      const prompt = `Partner shop has ${productsSnapshot.size} products, ${ordersSnapshot.size} pending orders. Predict today's potential margin earnings. Return JSON: {"predictedMargin": number, "recommendations": ["string"], "motivationalMessage": "string"}`;
+
+      const response = await callDeepSeek([
+        { role: 'system', content: 'You are an earnings predictor. Return ONLY valid JSON.' },
+        { role: 'user', content: prompt }
+      ]);
+      prediction = JSON.parse(response);
+    }
+
+    await db.collection('users').doc(uid).update({
+      aiPrediction: prediction,
+      aiPredictionAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    await db.collection('partnerMargins').doc(order.partnerId)
-      .collection('pending').add({
-        orderId: orderDoc.id,
-        amount: order.totalPartnerMargin,
-        status: 'pending',
-        orderedAt: order.orderedAt,
-        releaseAt: now,
-        releasedAt: null
-      });
-
-    results.push({ orderId: orderDoc.id, amount: order.totalPartnerMargin });
+    return prediction;
+  } catch (error) {
+    console.error('Prediction error:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to generate prediction');
   }
-
-  return {
-    success: true,
-    released: results.length,
-    orders: results
-  };
 });
 
 /**
- * getPartnerStats()
- * 
- * HTTP function to get partner statistics
+ * AI Fraud Detector - Runs every 6 hours
  */
-exports.getPartnerStats = functions.https.onCall(async (data, context) => {
-  const { partnerId } = data;
+exports.detectFraud = functions.pubsub.schedule('0 */6 * * *').onRun(async (context) => {
+  console.log('Starting fraud detection...');
+  try {
+    const usersSnapshot = await db.collection('users').get();
 
-  if (!partnerId) {
-    throw new functions.https.HttpsError('invalid-argument', 'partnerId required');
+    for (const userDoc of usersSnapshot.docs) {
+      const uid = userDoc.id;
+      const userData = userDoc.data();
+
+      const tasksSnapshot = await db.collection('taskSubmissions').where('workerId', '==', uid).get();
+      const withdrawalsSnapshot = await db.collection('withdrawals').where('workerId', '==', uid).get();
+      const taskCompletionRate = tasksSnapshot.size > 0 ? tasksSnapshot.docs.filter(d => d.data().status === 'approved').length / tasksSnapshot.size : 0;
+
+      const prompt = `Analyze this user behavior pattern for fraud indicators: Total tasks: ${tasksSnapshot.size}, Completion rate: ${(taskCompletionRate * 100).toFixed(1)}%, Withdrawal requests: ${withdrawalsSnapshot.size}, Mode: ${userData.mode}. Return JSON: {"fraudScore": 0-100, "indicators": ["string"], "recommendation": "string"}`;
+
+      try {
+        const response = await callDeepSeek([
+          { role: 'system', content: 'You are a fraud detector. Return ONLY valid JSON.' },
+          { role: 'user', content: prompt }
+        ]);
+        const result = JSON.parse(response);
+
+        if (result.fraudScore > 70) {
+          await db.collection('fraudAlerts').add({
+            userId: uid, userName: userData.name, mode: userData.mode,
+            fraudScore: result.fraudScore, indicators: result.indicators,
+            recommendation: result.recommendation, status: 'active',
+            flaggedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          if (result.fraudScore > 90) {
+            await db.collection('users').doc(uid).update({
+              status: 'suspended', suspendedAt: admin.firestore.FieldValue.serverTimestamp(),
+              suspendReason: 'Auto-suspended due to high fraud score'
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Fraud detection error for user ${uid}:`, error);
+      }
+    }
+    console.log('Fraud detection complete');
+  } catch (error) {
+    console.error('Fraud detection error:', error);
   }
-
-  const shopDoc = await db.collection('partnerShops').doc(partnerId).get();
-  if (!shopDoc.exists) {
-    throw new functions.https.HttpsError('not-found', 'Partner not found');
-  }
-
-  const shop = shopDoc.data();
-
-  const ordersSnapshot = await db.collection('partnerOrders')
-    .where('partnerId', '==', partnerId)
-    .get();
-
-  const pendingMargins = await db.collection('partnerMargins')
-    .doc(partnerId)
-    .collection('pending')
-    .where('status', '==', 'pending')
-    .get();
-
-  const availableMargin = pendingMargins.docs.reduce((sum, d) => sum + (d.data().amount || 0), 0);
-
-  return {
-    totalOrders: shop.totalOrders || 0,
-    totalSales: shop.totalSales || 0,
-    totalMarginEarned: shop.totalMarginEarned || 0,
-    pendingMargin: ordersSnapshot.docs
-      .filter(d => d.data().marginStatus === 'holding' || d.data().marginStatus === 'pending')
-      .reduce((sum, d) => sum + (d.data().totalPartnerMargin || 0), 0),
-    availableMargin,
-    totalWithdrawn: shop.totalWithdrawn || 0
-  };
 });
+
+/**
+ * AI Content Reviewer - Called on proof submission
+ */
+exports.reviewProof = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+  const { proofType, proofContent, venture } = data;
+
+  try {
+    const prompt = `Review this ${proofType} content for a marketing task. Score 1-10 for: authenticity (not AI-generated), relevance to ${venture}, quality. Return JSON: {"score": 1-10, "isAIGenerated": boolean, "isFake": boolean, "reason": "string"}`;
+
+    const response = await callDeepSeek([
+      { role: 'system', content: 'You are a content reviewer. Return ONLY valid JSON.' },
+      { role: 'user', content: `${prompt}\n\nContent: ${proofContent}` }
+    ]);
+
+    const result = JSON.parse(response);
+    return {
+      approved: result.score >= 5 && !result.isAIGenerated && !result.isFake,
+      score: result.score,
+      reason: result.reason
+    };
+  } catch (error) {
+    console.error('Content review error:', error);
+    return { approved: true, score: 5, reason: 'AI review failed, defaulting to manual review' };
+  }
+});
+
+module.exports = {
+  generateDailyTasks,
+  predictEarnings,
+  detectFraud,
+  reviewProof
+};

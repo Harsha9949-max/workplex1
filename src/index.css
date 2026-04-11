@@ -35,7 +35,7 @@ body {
 /* Text selection */
 ::selection {
   background-color: rgba(232, 184, 75, 0.3);
-  color: #E8B84B;
+  color: #ddb149;
 }
 
 /* Glass card effect */

@@ -1,6 +1,6 @@
 /**
- * WorkPlex Phase 2 — Home Dashboard with Mode-Specific Content
- * Real-time Firestore listeners, dual-mode support (Promoter vs Partner)
+ * WorkPlex Phase 2 — Home Dashboard with Mode-Specific Content + Live Earnings Feed (Phase 10)
+ * Real-time Firestore listeners, dual-mode support, viral growth features
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -8,11 +8,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, TrendingUp, Flame, ShoppingBag, ListTodo,
   UserCircle, Share2, ChevronRight, Clock, Bell, Zap,
-  Copy, CheckCircle, BarChart3, Package, ArrowRight, X
+  Copy, CheckCircle, BarChart3, Package, ArrowRight, X, Users, MessageSquare
 } from 'lucide-react';
 import { doc, onSnapshot, collection, query, where, orderBy, limit, getDocs, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { UserProfile, UserMode, getCurrentLevel, formatCurrency } from '../types';
+import { LiveEarningsFeed, TeamChat, ShareUtils } from '../ViralLayer';
 
 interface HomeDashboardProps {
   user: any;
@@ -39,6 +40,7 @@ export default function HomeDashboard({ user, userData }: HomeDashboardProps) {
     todayEarnings: 0,
     monthlyEarnings: 0
   });
+  const [showTeamChat, setShowTeamChat] = useState(false);
 
   // Update current time every second for countdowns
   useEffect(() => {
@@ -222,6 +224,15 @@ export default function HomeDashboard({ user, userData }: HomeDashboardProps) {
           <div className="flex items-center gap-2">
             <Flame className="w-5 h-5 text-orange-500" />
             <span className="font-bold text-sm">{userData.streak || 0}d</span>
+            {/* Team Chat Button for Lead Marketers */}
+            {mode === 'Promoter' && (userData.role === 'Lead Marketer' || userData.role === 'Manager') && (
+              <button
+                onClick={() => setShowTeamChat(true)}
+                className="ml-2 p-2 bg-[#E8B84B]/10 rounded-full hover:bg-[#E8B84B]/20 transition-colors"
+              >
+                <MessageSquare className="w-5 h-5 text-[#E8B84B]" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -261,7 +272,7 @@ export default function HomeDashboard({ user, userData }: HomeDashboardProps) {
                   />
                 </div>
                 <button
-                  onClick={() => shareOnWhatsApp(`Check out ${userData.venture}! Use my code ${coupon.code} for discount!`)}
+                  onClick={() => ShareUtils.coupon(coupon.code, userData.venture || 'WorkPlex')}
                   className="w-full bg-[#00C9A7] text-black font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-[#00b395] transition-colors"
                 >
                   <Share2 className="w-4 h-4" /> Share on WhatsApp
@@ -385,7 +396,7 @@ export default function HomeDashboard({ user, userData }: HomeDashboardProps) {
                       {linkCopied ? 'Copied!' : 'Copy Link'}
                     </button>
                     <button
-                      onClick={() => shareOnWhatsApp(`Check out my shop: workplex.hvrs.in/shop/${userData.shopSlug}`)}
+                      onClick={() => ShareUtils.shop(userData.shopName || 'My Shop', userData.shopSlug || '')}
                       className="flex-1 bg-gray-800 text-white font-bold py-2 rounded-xl flex items-center justify-center gap-2 text-sm hover:bg-gray-700 transition-colors"
                     >
                       <Share2 className="w-4 h-4" /> Share
@@ -543,6 +554,36 @@ export default function HomeDashboard({ user, userData }: HomeDashboardProps) {
           </div>
         </div>
       )}
+
+      {/* ===== LIVE EARNINGS FEED (Phase 10) ===== */}
+      <LiveEarningsFeed userId={user.uid} />
+
+      {/* ===== TEAM CHAT MODAL (Phase 10) ===== */}
+      <AnimatePresence>
+        {showTeamChat && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowTeamChat(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-[#1A1A1A] rounded-3xl w-full max-w-lg h-[80vh] border border-gray-800 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between p-4 border-b border-gray-800">
+                <h3 className="font-bold">Team Chat</h3>
+                <button onClick={() => setShowTeamChat(false)}><X className="w-5 h-5" /></button>
+              </div>
+              <TeamChat leadId={user.uid} leadName={userData.name} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ===== BOTTOM NAVIGATION ===== */}
       <div className="fixed bottom-0 left-0 right-0 bg-[#0A0A0A]/95 backdrop-blur-xl border-t border-gray-800 px-4 py-3 flex items-center justify-around z-40">
